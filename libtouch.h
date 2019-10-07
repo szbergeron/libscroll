@@ -9,7 +9,13 @@
  * calculation to take place.
  */
 
-#define USE_SCALE_FACTOR true
+/**
+ * Any of these options can be logical or'ed together
+ * and passed to set_options
+ */
+enum options {
+    IMPRECISE_SCROLLS_SMOOTHLY = 0x1, // controls whether large jumps from imprecise devices (keyboard, clickwheel) should animate smoothly
+};
 
 struct pan_transform {
     int64_t x; // x axis pan amount in dp
@@ -26,6 +32,53 @@ struct pan_transform {
     double velocity_x; // gives current x axis velocity in dp, can be used for overscroll behavior
     double velocity_y; // gives y axis velocity
 };
+
+struct scrollview {
+    uint64_t content_height; // height of scrollview content space in dp
+    uint64_t content_width; // width of scrollview content space in dp
+    uint64_t viewport_height; // height of viewport in dp
+    uint64_t viewport_width; // width of viewport in dp
+
+    // x and y axis offset of top-left corner of viewport relative to top-left corner of content
+    // equivalent to using force_pan() after setting geometry
+    int64_t viewport_initial_x;
+    int64_t viewport_initial_y;
+
+    // whether to enable overscroll bounce behavior on each edge
+    bool bounce_bottom: 1;
+    bool bounce_top: 1;
+    bool bounce_left: 1;
+    bool bounce_right: 1;
+
+    //TODO: determine if additional "soft boundaries" would be beneficial for overscroll purposes
+    //TODO: allow setting "magnetic" points in a scrollview
+
+
+    // NOTE: any variables past this point should be considered opaque and implementation defined
+
+    void* state; // handle used for internally tracking state of a given scrollview by libtouch
+};
+
+
+
+/**
+ * Sets the geometry of the current scrollview
+ */
+void set_geometry(struct scrollview);
+
+/**
+ * Allows forcing a relative scroll by x, y dp in the current scrollview
+ *
+ * Example use case: user uses a keyboard shortcut to jump down by a page
+ */
+void force_pan(int64_t x_dp, int64_t y_dp);
+
+/**
+ * Allows forcing a scroll to position x, y dp in the current scrollview
+ *
+ * Example use case: user jumps to an absolute line number in a text editor
+ */
+void force_jump(int64_t x_dp, int64_t y_dp);
 
 /**
  * Gets a pan event detailing how to transform
@@ -49,6 +102,9 @@ struct pan_transform get_pan_predict(float ms_to_vsync, float ms_avg_frametime);
 
 int64_t get_pan_x(); // gets x component of current pan. WARN: mutates internal state: clears x axis event buffer
 int64_t get_pan_y(); // gets y component of current pan. WARN: mutates internal state: clears y axis event buffer
+
+int64_t get_pos_x(); // gets absolute x position of current viewport into content
+int64_t get_pos_y(); // gets absolute y position of current viewport into content
 
 /**
  * set_input_source should be properly used always, since
