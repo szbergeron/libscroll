@@ -10,6 +10,34 @@
  */
 
 /**
+ * Example usage:
+ *
+ * 1. Create some `struct scrollview` locally and pass geometry
+ *      and expected behavior as specified in struct
+ *
+ * 2. Pass said struct by value to create_scrollview(), storing
+ *      the returned scrollview handle for future use
+ *      in conjunction with the associated UI scrollview
+ *
+ * 3. Use set_predict() with estimations of average frametimes
+ *      and how far into a frame period each get_pos/get_pan call
+ *      will occur
+ *
+ * 4. In event loop, recieve and pass any scroll events through
+ *      add_scroll(), add_scroll_interrupt(), add_scroll_release()
+ *      and related event signaling functions. Strict ordering
+ *      or summation are not required here, just pass info as
+ *      it comes in from the device
+ *
+ * 5. On each render loop iteration, use get_pan_[x/y]() or
+ *      get_pos_[x/y]() to find where to transform the content to
+ *      under the viewport, no intermediate processing required
+ *
+ * 6. Call destroy_scrollview(), passing the scrollview handle
+ *      from earlier to clean up scrollview on exit
+ */
+
+/**
  * Any of these options can be logical or'ed together
  * and passed to set_options
  */
@@ -59,12 +87,34 @@ struct scrollview {
     void* state; // handle used for internally tracking state of a given scrollview by libtouch
 };
 
-
+/**
+ * Do initialization tasks for and return a handle to a new scrollview
+ *
+ * Default geometry will be used for this variant, and can be updated
+ * with signal_geometry() on a modified scrollview
+ */
+struct scrollview* create_scrollview();
 
 /**
- * Sets the geometry of the current scrollview
+ * Create a new scrollview and simultaneously default
+ * initialize the geometry of the scrollview to that
+ * of the passed scrollview
  */
-void set_geometry(struct scrollview);
+struct scrollview* create_scrollview(struct scrollview view);
+
+/**
+ * Tears down and frees the referenced scrollview
+ *
+ * The handle passed here should be considered invalid
+ * after this function has been called
+ */
+void destroy_scrollview(scrollview* view);
+
+/**
+ * Signals that geometry for the referenced scrollview
+ * has changed and should be updated
+ */
+void signal_geometry(struct scrollview* view);
 
 /**
  * Allows forcing a relative scroll by x, y dp in the current scrollview
