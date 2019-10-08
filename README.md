@@ -1,2 +1,3 @@
-# libtouch
-Touch event interpolation library for all your smooth scrolling needs
+# libscroll
+A drop-in solution to add smooth, responsive, scrolling to any view.
+Takes in individual input events, outputs a simple pan amount.
