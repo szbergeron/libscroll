@@ -84,7 +84,7 @@ struct scrollview {
 
     // NOTE: any variables past this point should be considered opaque and implementation defined
 
-    void* state; // handle used for internally tracking state of a given scrollview by libtouch
+    struct scrollviewstate* state; // handle used for internally tracking state of a given scrollview by libtouch
 };
 
 /**
