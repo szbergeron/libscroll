@@ -29,13 +29,15 @@
  *      or summation are not required here, just pass info as
  *      it comes in from the device
  *
- * 5. On each render loop iteration, use get_pan_[x/y]() or
+ * 5. On each render loop iteration, call mark_frame() and then use get_pan_[x/y]() or
  *      get_pos_[x/y]() to find where to transform the content to
  *      under the viewport, no intermediate processing required
  *
  * 6. Call destroy_scrollview(), passing the scrollview handle
  *      from earlier to clean up scrollview on exit
  */
+
+//NOTE: this library is not yet multithreading safe, but that is TODO
 
 /**
  * Any of these options can be logical or'ed together
@@ -56,9 +58,6 @@ struct pan_transform {
                  // also indicates that no further pan or state change
                  // will occur without adding another event to
                  // the queue, so any render loop can block safely
-
-    double velocity_x; // gives current x axis velocity in dp, can be used for overscroll behavior
-    double velocity_y; // gives y axis velocity
 };
 
 struct scrollview {
@@ -112,7 +111,7 @@ void destroy_scrollview(scrollview* view);
 
 /**
  * Signals that geometry for the referenced scrollview
- * has changed and should be updated
+ * has been changed and should be updated
  */
 void signal_geometry(struct scrollview* view);
 
@@ -131,12 +130,6 @@ void force_pan(int64_t x_dp, int64_t y_dp);
 void force_jump(int64_t x_dp, int64_t y_dp);
 
 /**
- * Gets a pan event detailing how to transform
- * the current viewport
- */
-struct pan_transform get_pan();
-
-/**
  * Sets how long the average frame is as well as how far
  * in the future to predict a pan. This allows us to slightly
  * overshoot any pan to minimize percieved lag
@@ -144,28 +137,23 @@ struct pan_transform get_pan();
 void set_predict(float ms_to_vsync, float ms_avg_frametime);
 
 /**
- * Shorthand for calling set_predict followed by get_pan
- * Use this if frametimes or render latency
- * are highly variable to minimize jank or stutter.
+ * WARN: the following get_[...]() functions should only be called after a call to mark_frame()
  */
-struct pan_transform get_pan_predict(float ms_to_vsync, float ms_avg_frametime);
-
 int64_t get_pan_x(); // gets x component of current pan. WARN: mutates internal state: clears x axis event buffer
 int64_t get_pan_y(); // gets y component of current pan. WARN: mutates internal state: clears y axis event buffer
 
 int64_t get_pos_x(); // gets absolute x position of current viewport into content
 int64_t get_pos_y(); // gets absolute y position of current viewport into content
 
-/**
- * set_input_source should be properly used always, since
- * if input is assumed to be a touchpad and turns out to
- * be a touchscreen, an acceleration curve will be applied
- * which will desynchronize touch point and panning
- *
- * scroll_natural also only applies to 
- */
-
-void set_scale_factor(float x_factor, float y_factor); // normalization factor for quirky devices
+///**
+// * set_input_source should be properly used always, since
+// * if input is assumed to be a touchpad and turns out to
+// * be a touchscreen, an acceleration curve will be applied
+// * which will desynchronize touch point and panning
+// *
+// * scroll_natural also only applies to 
+// */
+//void set_scale_factor(float x_factor, float y_factor); // normalization factor for quirky devices
 
 enum input_source_t {
     UNDEFINED, // acts identically to PASSTHROUGH_KINETIC,
@@ -185,11 +173,8 @@ enum input_source_t {
 };
 
 /**
- * can be called at any time between calls to get_pan_*
- * and is indipotent
- *
- * output of any get_pan_* call is interpreted
- * through the lens of the most recently set source
+ * should be called before any add_scroll_[...]() function call for a given device,
+ * as any scroll event call is interpreted as coming from the last input source set
  */
 void set_input_source(enum input_source_t input_source);
 
@@ -208,7 +193,7 @@ int add_scroll_y(int64_t motion_y);
 
 /**
  * analogous to "was scrolling kinetically,
- * until user put two fingers on touchpad"
+ * until user put two fingers back on touchpad"
  */
 void add_scroll_interrupt();
 
@@ -218,3 +203,12 @@ void add_scroll_interrupt();
  * a "flick" action
  */
 void add_scroll_release();
+
+/**
+ * Call this as late in the rendering pipeline as possible before asking
+ * for current pan/geometry.
+ *
+ * Internally this takes a snapshot of the proposed pan amount
+ * and locks those numbers until the next call to mark_frame()
+ */
+void mark_frame();
