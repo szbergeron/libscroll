@@ -85,16 +85,6 @@ extern "C" {
     );
 
     /**
-     * Returns true if a pan is ongoing and rendering should continue
-     * (render thread should not block)
-     *
-     * A scrollview may be active still even if pan amount is zero,
-     * for instance if a scrollview is briefly balanced on a
-     * magnetic boundary edge
-     */
-    bool lscroll_query_pan_active(struct lscroll_scrollview* handle);
-
-    /**
      * Allows forcing a relative scroll by x, y dp in the current scrollview
      *
      * Example use case: user uses a keyboard shortcut to jump down by a page
@@ -128,8 +118,18 @@ extern "C" {
     );
 
     /**
-     * WARN: the following get_[...]() functions should only be called after a call to mark_frame()
+     * WARN: the following get_[...]() and query_[...] functions should only be called after a call to mark_frame()
      */
+
+    /**
+     * Returns true if a pan is ongoing and rendering should continue
+     * (render thread should not block)
+     *
+     * A scrollview may be active still even if pan amount is zero,
+     * for instance if a scrollview is briefly balanced on a
+     * magnetic boundary edge
+     */
+    bool lscroll_query_pan_active(struct lscroll_scrollview* handle);
 
     /** gets x component of current pan. WARN: mutates internal state: clears x axis event buffer */
     int64_t lscroll_get_pan_x(struct lscroll_scrollview* handle);
@@ -177,7 +177,7 @@ extern "C" {
     void lscroll_set_input_source(enum lscroll_input_source_t input_source);
 
     /** Add some pan event to the scrollview referenced by handle */
-    int lscroll_add_scroll(
+    void lscroll_add_scroll(
             struct lscroll_scrollview* handle,
             int64_t motion_x, // x axis motion reported by device
             int64_t motion_y // y axis motion reported by device
@@ -188,8 +188,8 @@ extern "C" {
      * use for when input device delivers axes
      * as separate events
      */
-    int lscroll_add_scroll_x(struct lscroll_scrollview* handle, int64_t motion_x);
-    int lscroll_add_scroll_y(struct lscroll_scrollview* handle, int64_t motion_y);
+    void lscroll_add_scroll_x(struct lscroll_scrollview* handle, int64_t motion_x);
+    void lscroll_add_scroll_y(struct lscroll_scrollview* handle, int64_t motion_y);
 
     /**
      * analogous to "was scrolling kinetically,
@@ -202,7 +202,7 @@ extern "C" {
      * last event to be sent during
      * a "flick" action
      */
-    void lscroll_add_scroll_release(struct lscroll_scrollview* handle);
+    void lscroll_add_scroll_fling(struct lscroll_scrollview* handle);
 
     /**
      * Call this as late in the rendering pipeline as possible before asking

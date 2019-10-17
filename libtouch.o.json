@@ -1,0 +1,1 @@
+{ "directory": "/home/sawyer/revery-bryphe/libscroll", "file": "libtouch.cpp", "output": "libtouch.o", "arguments": ["/usr/bin/clang-9", "-xc++", "libtouch.cpp", "--driver-mode=g++", "-o", "libtouch.o", "-c", "-std=c++17", "--target=x86_64-pc-linux-gnu"]},

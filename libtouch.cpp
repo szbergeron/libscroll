@@ -4,13 +4,15 @@
 #include <cstdlib>
 #include <iostream>
 #include <variant>
+#include <mutex>
 #include "libtouch.h"
 
 
 namespace events {
     struct pan_event {
-        int64_t pan_x;
-        int64_t pan_y;
+        //int64_t pan_x;
+        //int64_t pan_y;
+        int64_t pan_amount;
     };
 
     struct interrupt_event {
@@ -29,13 +31,24 @@ namespace events {
 
 
 struct lscroll_scrollview {
-    uint64_t content_height = 0;
+    std::recursive_mutex lock;
+
+
     uint64_t content_width = 0;
+    uint64_t content_height = 0;
 
-    uint64_t viewport_height = 0;
     uint64_t viewport_width = 0;
+    uint64_t viewport_height = 0;
 
-    std::vector<events::pan_event> past_events;
+    int64_t viewport_position_x = 0;
+    int64_t viewport_position_y = 0;
+
+    int64_t current_velocity_x = 0;
+    int64_t current_velocity_y = 0;
+
+    //std::vector<events::pan_event> past_events;
+    std::vector<std::variant<events::pan_event, events::interrupt_event, events::fling_event>> events_x;
+    std::vector<std::variant<events::pan_event, events::interrupt_event, events::fling_event>> events_y;
 
     lscroll_scrollview() {
 
@@ -47,41 +60,94 @@ struct lscroll_scrollview {
 
 extern "C" {
 
-struct lscroll_scrollview* lscroll_create_scrollview() {
-    struct lscroll_scrollview* sv = new lscroll_scrollview;
+    struct lscroll_scrollview* lscroll_create_scrollview() {
+        struct lscroll_scrollview* sv = new lscroll_scrollview;
 
-    return sv;
-};
+        return sv;
+    };
 
-void lscroll_destroy_scrollview(struct lscroll_scrollview* sv) {
-    delete sv;
-}
+    void lscroll_destroy_scrollview(struct lscroll_scrollview* sv) {
+        delete sv;
+    }
 
-void lscroll_set_geometry(
-        struct lscroll_scrollview* handle,
-        uint64_t content_height,
-        uint64_t content_width,
-        uint64_t viewport_height,
-        uint64_t viewport_width
-) {
-    //insert values into header
-    std::cout << "scrollview geometry updated to" << std::endl
-        << "viewport w/h: " << viewport_width << ", " << viewport_height << std::endl
-        << " content w/h: " << content_width << ", " << content_height << std::endl;
-}
+    void lscroll_set_geometry(
+            struct lscroll_scrollview* handle,
+            uint64_t content_height,
+            uint64_t content_width,
+            uint64_t viewport_height,
+            uint64_t viewport_width
+    ) {
+        handle->lock.lock();
+        //insert values into header
+        std::cout << "scrollview geometry updated to" << std::endl
+            << "viewport w/h: " << viewport_width << ", " << viewport_height << std::endl
+            << " content w/h: " << content_width << ", " << content_height << std::endl;
 
-/*
-void lscroll_signal_geometry(struct lscroll_scrollview* sv) {
-    std::cout << "scrollview geometry updated to" << std::endl
-        << "viewport w/h: " << sv->viewport_width << ", " << sv->viewport_height << std::endl
-        << " content w/h: " << sv->content_width << ", " << sv->content_height << std::endl;
+        // we may need to recompute position of viewport within content on resize, handle that here
+        // also figure out on resize what a sane repositioning strategy is
+        
+        handle->lock.unlock();
+    }
 
-    sv->state->content_height = sv->content_height;
-    sv->state->content_width = sv->content_width;
-    sv->state->viewport_height = sv->viewport_height;
-    sv->state->viewport_width = sv->viewport_width;
-}
-*/
+    void lscroll_add_scroll_x(lscroll_scrollview* handle, int64_t motion_x) {
+        handle->lock.lock();
+
+        handle->events_x.push_back(
+                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
+                    events::pan_event{motion_x}));
+
+        handle->lock.unlock();
+    }
+
+    void lscroll_add_scroll_y(lscroll_scrollview* handle, int64_t motion_y) {
+        handle->lock.lock();
+
+        handle->events_y.push_back(
+                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
+                    events::pan_event{motion_y}));
+
+        handle->lock.unlock();
+    }
+
+    void lscroll_add_scroll(
+            lscroll_scrollview* handle,
+            int64_t motion_x,
+            int64_t motion_y
+    ) {
+        // possibly flatten this out to avoid two locks
+        // TODO: evaluate if worthwhile
+
+        lscroll_add_scroll_y(handle, motion_y);
+        lscroll_add_scroll_x(handle, motion_x);
+    }
+
+    void lscroll_add_scroll_interrupt(lscroll_scrollview* handle) {
+        handle->lock.lock();
+
+        handle->events_y.push_back(
+                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
+                    events::interrupt_event{}));
+
+        handle->events_x.push_back(
+                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
+                    events::interrupt_event{}));
+
+        handle->lock.unlock();
+    }
+
+    void lscroll_add_scroll_release(lscroll_scrollview* handle) {
+        handle->lock.lock();
+
+        handle->events_y.push_back(
+                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
+                    events::fling_event{}));
+
+        handle->events_x.push_back(
+                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
+                    events::fling_event{}));
+
+        handle->lock.unlock();
+    }
 }
 
 
