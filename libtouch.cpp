@@ -33,6 +33,15 @@ namespace events {
 struct lscroll_scrollview {
     std::recursive_mutex lock;
 
+    struct {
+        int64_t panned_by_x = 0;
+        int64_t panned_by_y = 0;
+
+        int64_t absolute_x = 0;
+        int64_t absolute_y = 0;
+
+        bool active = true; // TODO: change to false, only activate if pan ongoing (velocity is 0)
+    } frame_pan;
 
     uint64_t content_width = 0;
     uint64_t content_height = 0;
@@ -43,10 +52,9 @@ struct lscroll_scrollview {
     int64_t viewport_position_x = 0;
     int64_t viewport_position_y = 0;
 
-    int64_t current_velocity_x = 0;
-    int64_t current_velocity_y = 0;
+    double current_velocity_x = 0;
+    double current_velocity_y = 0;
 
-    //std::vector<events::pan_event> past_events;
     std::vector<std::variant<events::pan_event, events::interrupt_event, events::fling_event>> events_x;
     std::vector<std::variant<events::pan_event, events::interrupt_event, events::fling_event>> events_y;
 
@@ -92,9 +100,7 @@ extern "C" {
     void lscroll_add_scroll_x(lscroll_scrollview* handle, int64_t motion_x) {
         handle->lock.lock();
 
-        handle->events_x.push_back(
-                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
-                    events::pan_event{motion_x}));
+        handle->events_x.push_back(events::pan_event{motion_x});
 
         handle->lock.unlock();
     }
@@ -102,9 +108,7 @@ extern "C" {
     void lscroll_add_scroll_y(lscroll_scrollview* handle, int64_t motion_y) {
         handle->lock.lock();
 
-        handle->events_y.push_back(
-                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
-                    events::pan_event{motion_y}));
+        handle->events_y.push_back(events::pan_event{motion_y});
 
         handle->lock.unlock();
     }
@@ -116,21 +120,19 @@ extern "C" {
     ) {
         // possibly flatten this out to avoid two locks
         // TODO: evaluate if worthwhile
+        handle->lock.lock();
 
-        lscroll_add_scroll_y(handle, motion_y);
-        lscroll_add_scroll_x(handle, motion_x);
+        handle->events_y.push_back(events::pan_event{motion_y});
+        handle->events_x.push_back(events::pan_event{motion_x});
+
+        handle->lock.unlock();
     }
 
     void lscroll_add_scroll_interrupt(lscroll_scrollview* handle) {
         handle->lock.lock();
 
-        handle->events_y.push_back(
-                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
-                    events::interrupt_event{}));
-
-        handle->events_x.push_back(
-                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
-                    events::interrupt_event{}));
+        handle->events_y.push_back(events::interrupt_event{});
+        handle->events_x.push_back(events::interrupt_event{});
 
         handle->lock.unlock();
     }
@@ -138,15 +140,76 @@ extern "C" {
     void lscroll_add_scroll_release(lscroll_scrollview* handle) {
         handle->lock.lock();
 
-        handle->events_y.push_back(
-                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
-                    events::fling_event{}));
-
-        handle->events_x.push_back(
-                std::variant<events::pan_event, events::interrupt_event, events::fling_event>(
-                    events::fling_event{}));
+        handle->events_y.push_back(events::fling_event{});
+        handle->events_x.push_back(events::fling_event{});
 
         handle->lock.unlock();
+    }
+
+    void lscroll_mark_frame(lscroll_scrollview* handle) {
+        handle->lock.lock();
+        // iterate through entries in event queues,
+        // currently simply sum them and insert into
+        // snapshot in handle
+
+        // both relative, changed by events
+        int64_t pan_x = 0;
+        int64_t pan_y = 0;
+
+        for(auto event: handle->events_x) {
+            if(std::holds_alternative<events::pan_event>(event)) {
+                pan_x += std::get<events::pan_event>(event).pan_amount;
+            } else if(std::holds_alternative<events::fling_event>(event)) {
+                //
+            } else if(std::holds_alternative<events::interrupt_event>(event)) {
+                //
+            } else {
+                std::cerr << "LibScroll: Not accounting for passed event in lscroll_mark_frame" << std::endl;
+                exit(-1);
+            }
+        }
+
+        for(auto event: handle->events_y) {
+            if(std::holds_alternative<events::pan_event>(event)) {
+                pan_y += std::get<events::pan_event>(event).pan_amount;
+            } else if(std::holds_alternative<events::fling_event>(event)) {
+                //
+            } else if(std::holds_alternative<events::interrupt_event>(event)) {
+                //
+            } else {
+                std::cerr << "LibScroll: Not accounting for passed event in lscroll_mark_frame" << std::endl;
+                exit(-1);
+            }
+        }
+
+        handle->frame_pan.panned_by_x = pan_x;
+        handle->frame_pan.panned_by_y = pan_y;
+        handle->frame_pan.absolute_x += pan_x;
+        handle->frame_pan.absolute_y += pan_y;
+
+        // TODO: need to constrain viewport to content
+
+        handle->lock.unlock();
+    }
+
+    int64_t lscroll_get_pan_x(lscroll_scrollview* handle) {
+        return handle->frame_pan.panned_by_x;
+    }
+
+    int64_t lscroll_get_pan_y(lscroll_scrollview* handle) {
+        return handle->frame_pan.panned_by_y;
+    }
+
+    int64_t lscroll_get_pos_x(lscroll_scrollview* handle) {
+        return handle->frame_pan.absolute_x;
+    }
+
+    int64_t lscroll_get_pos_y(lscroll_scrollview* handle) {
+        return handle->frame_pan.absolute_y;
+    }
+
+    bool lscroll_query_pan_active(lscroll_scrollview* handle) {
+        return handle->frame_pan.active;
     }
 }
 

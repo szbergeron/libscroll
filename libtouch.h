@@ -135,13 +135,13 @@ extern "C" {
     int64_t lscroll_get_pan_x(struct lscroll_scrollview* handle);
 
     /** gets y component of current pan. WARN: mutates internal state: clears y axis event buffer */
-    int64_t lscroll_get_pan_y();
+    int64_t lscroll_get_pan_y(struct lscroll_scrollview* handle);
 
     /** gets absolute x position of current viewport into/relative to content */
-    int64_t lscroll_get_pos_x();
+    int64_t lscroll_get_pos_x(struct lscroll_scrollview* handle);
 
     /** gets absolute y position of current viewport into/relative to content */
-    int64_t lscroll_get_pos_y();
+    int64_t lscroll_get_pos_y(struct lscroll_scrollview* handle);
 
     ///**
     // * set_input_source should be properly used always, since
@@ -202,7 +202,7 @@ extern "C" {
      * last event to be sent during
      * a "flick" action
      */
-    void lscroll_add_scroll_fling(struct lscroll_scrollview* handle);
+    void lscroll_add_scroll_release(struct lscroll_scrollview* handle);
 
     /**
      * Call this as late in the rendering pipeline as possible before asking
