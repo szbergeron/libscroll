@@ -52,64 +52,6 @@ extern "C" {
         LIBSCROLL_IMPRECISE_SCROLLS_SMOOTHLY = 0x1, // controls whether large jumps from imprecise devices (keyboard, clickwheel) should animate smoothly
     };
 
-    /*struct lscroll_pan_transform {
-        int64_t x; // x axis pan amount in dp
-        int64_t y; // y axis pan amount in dp
-        bool panned : 1; // only true if a pan event has occurred.
-                     // A transform can be skipped if this is false, otherwise assume
-                     // that a pan has occurred and do a transform of the viewport by
-                     // x and y
-                     //
-                     // also indicates that no further pan or state change
-                     // will occur without adding another event to
-                     // the queue, so any render loop can block safely
-    };*/
-
-    /*struct lscroll_scrollview {
-        uint64_t content_height; // height of scrollview content space in dp
-        uint64_t content_width; // width of scrollview content space in dp
-        uint64_t viewport_height; // height of viewport in dp
-        uint64_t viewport_width; // width of viewport in dp
-
-        // x and y axis offset of top-left corner of viewport relative to top-left corner of content
-        // equivalent to using force_pan() after setting geometry
-        //int64_t viewport_initial_x;
-        //int64_t viewport_initial_y;
-
-        // whether to enable overscroll bounce behavior on each edge
-        //bool bounce_bottom: 1;
-        //bool bounce_top: 1;
-        //bool bounce_left: 1;
-        //bool bounce_right: 1;
-
-        //TODO: determine if additional "soft boundaries" would be beneficial for overscroll purposes
-        //TODO: allow setting "magnetic" points in a scrollview
-
-
-        // NOTE: any variables past this point should be considered opaque and implementation defined
-
-        struct lscroll_scrollviewstate* state; // handle used for internally tracking state of a given scrollview by libtouch
-    };*/
-
-    /** Set the geometry for the current scrollview */
-    void lscroll_set_geometry(
-            struct lscroll_scrollview* handle,
-            uint64_t content_height,
-            uint64_t content_width,
-            uint64_t viewport_height,
-            uint64_t viewport_width
-    );
-
-    /**
-     * Returns true if a pan is ongoing and rendering should continue
-     * (render thread should not block)
-     *
-     * A scrollview may be active still even if pan amount is zero,
-     * for instance if a scrollview is briefly balanced on a
-     * magnetic boundary edge
-     */
-    bool lscroll_query_pan_active(struct lscroll_scrollview* handle);
-
     /**
      * Do initialization tasks for and return a handle to a new scrollview
      *
@@ -132,6 +74,25 @@ extern "C" {
      * after this function has been called
      */
     void lscroll_destroy_scrollview(struct lscroll_scrollview* handle);
+
+    /** Set the geometry for the current scrollview */
+    void lscroll_set_geometry(
+            struct lscroll_scrollview* handle,
+            uint64_t content_height,
+            uint64_t content_width,
+            uint64_t viewport_height,
+            uint64_t viewport_width
+    );
+
+    /**
+     * Returns true if a pan is ongoing and rendering should continue
+     * (render thread should not block)
+     *
+     * A scrollview may be active still even if pan amount is zero,
+     * for instance if a scrollview is briefly balanced on a
+     * magnetic boundary edge
+     */
+    bool lscroll_query_pan_active(struct lscroll_scrollview* handle);
 
     /**
      * Allows forcing a relative scroll by x, y dp in the current scrollview

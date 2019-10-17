@@ -48,7 +48,7 @@ struct lscroll_scrollview {
 extern "C" {
 
 struct lscroll_scrollview* lscroll_create_scrollview() {
-    struct lscroll_scrollview* sv = new struct lscroll_scrollview;
+    struct lscroll_scrollview* sv = new lscroll_scrollview;
 
     return sv;
 };
