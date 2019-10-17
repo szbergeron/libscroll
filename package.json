@@ -1,0 +1,10 @@
+{
+    "name": "libscroll",
+    "version": "0.1",
+    "description": "scrollview abstraction and input interpolation library",
+    "license": "MIT",
+    "esy": {
+        "build": [
+        ]
+    }
+}

@@ -85,7 +85,9 @@ extern "C" {
             uint64_t viewport_height,
             uint64_t viewport_width
     ) {
+#ifdef lscroll_thread_safe
         handle->lock.lock();
+#endif
         //insert values into header
         std::cout << "scrollview geometry updated to" << std::endl
             << "viewport w/h: " << viewport_width << ", " << viewport_height << std::endl
@@ -94,7 +96,9 @@ extern "C" {
         // we may need to recompute position of viewport within content on resize, handle that here
         // also figure out on resize what a sane repositioning strategy is
         
+#ifdef lscroll_thread_safe
         handle->lock.unlock();
+#endif
     }
 
     void lscroll_add_scroll_x(lscroll_scrollview* handle, int64_t motion_x) {
