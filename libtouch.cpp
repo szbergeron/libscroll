@@ -191,7 +191,7 @@ extern "C" {
                 //
             } else {
                 std::cerr << "LibScroll: Not accounting for passed event in lscroll_mark_frame" << std::endl;
-                exit(-1);
+                //exit(-1);
             }
         }
 

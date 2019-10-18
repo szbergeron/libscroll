@@ -81,22 +81,27 @@ extern "C" {
     namespace Output {
         CAMLPrim value rlscroll_get_pan_x(value handle) {
             int64_t r = lscroll_get_pan_x((lscroll_scrollview*)handle);
-            return Val_int(r);
+            return CAMLreturn(Val_int(r));
         }
 
         CAMLPrim value rlscroll_get_pan_y(value handle) {
             int64_t r = lscroll_get_pan_y((lscroll_scrollview*)handle);
-            return Val_int(r);
+            return CAMLreturn(Val_int(r));
         }
 
         CAMLPrim value rlscroll_get_pos_x(value handle) {
             int64_t r = lscroll_get_pan_x((lscroll_scrollview*)handle);
-            return Val_int(r);
+            return CAMLreturn(Val_int(r));
         }
 
         CAMLPrim value rlscroll_get_pos_y(value handle) {
             int64_t r = lscroll_get_pan_y((lscroll_scrollview*)handle);
-            return Val_int(r);
+            return CAMLreturn(Val_int(r));
+        }
+
+        CAMLPrim value rlscroll_scrollview_active(value handle) {
+            bool r = lscroll_query_pan_active((lscroll_scrollview*)handle);
+            return CAMLreturn(Val_bool(r));
         }
     }
 

@@ -6,6 +6,8 @@ module LibScroll = {
         type t; // opaque per API
         external create: unit => t = "rlscroll_create_scrollview";
         external destroy: t => unit = "rlscroll_destroy_scrollview";
+        // takes uints, TODO: pull in library to enforce unsigned args here to avoid spooky behavior
+        external set_geometry: (t, int, int, int, int) => unit = "rlscroll_set_geometry";
     }
 
     module Source = {
