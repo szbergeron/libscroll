@@ -102,19 +102,27 @@ extern "C" {
     }
 
     void lscroll_add_scroll_x(lscroll_scrollview* handle, int64_t motion_x) {
+#ifdef lscroll_thread_safe
         handle->lock.lock();
+#endif
 
         handle->events_x.push_back(events::pan_event{motion_x});
 
+#ifdef lscroll_thread_safe
         handle->lock.unlock();
+#endif
     }
 
     void lscroll_add_scroll_y(lscroll_scrollview* handle, int64_t motion_y) {
+#ifdef lscroll_thread_safe
         handle->lock.lock();
+#endif
 
         handle->events_y.push_back(events::pan_event{motion_y});
 
+#ifdef lscroll_thread_safe
         handle->lock.unlock();
+#endif
     }
 
     void lscroll_add_scroll(
@@ -124,34 +132,48 @@ extern "C" {
     ) {
         // possibly flatten this out to avoid two locks
         // TODO: evaluate if worthwhile
+#ifdef lscroll_thread_safe
         handle->lock.lock();
+#endif
 
         handle->events_y.push_back(events::pan_event{motion_y});
         handle->events_x.push_back(events::pan_event{motion_x});
 
+#ifdef lscroll_thread_safe
         handle->lock.unlock();
+#endif
     }
 
     void lscroll_add_scroll_interrupt(lscroll_scrollview* handle) {
+#ifdef lscroll_thread_safe
         handle->lock.lock();
+#endif
 
         handle->events_y.push_back(events::interrupt_event{});
         handle->events_x.push_back(events::interrupt_event{});
 
+#ifdef lscroll_thread_safe
         handle->lock.unlock();
+#endif
     }
 
     void lscroll_add_scroll_release(lscroll_scrollview* handle) {
+#ifdef lscroll_thread_safe
         handle->lock.lock();
+#endif
 
         handle->events_y.push_back(events::fling_event{});
         handle->events_x.push_back(events::fling_event{});
 
+#ifdef lscroll_thread_safe
         handle->lock.unlock();
+#endif
     }
 
     void lscroll_mark_frame(lscroll_scrollview* handle) {
+#ifdef lscroll_thread_safe
         handle->lock.lock();
+#endif
         // iterate through entries in event queues,
         // currently simply sum them and insert into
         // snapshot in handle
@@ -193,7 +215,9 @@ extern "C" {
 
         // TODO: need to constrain viewport to content
 
+#ifdef lscroll_thread_safe
         handle->lock.unlock();
+#endif
     }
 
     int64_t lscroll_get_pan_x(lscroll_scrollview* handle) {
@@ -214,6 +238,25 @@ extern "C" {
 
     bool lscroll_query_pan_active(lscroll_scrollview* handle) {
         return handle->frame_pan.active;
+    }
+
+    void lscroll_force_pan(
+            lscroll_scrollview* handle,
+            int64_t x_dp,
+            int64_t y_dp
+    ) {
+        lscroll_add_scroll(handle, x_dp, y_dp);
+    }
+
+    void lscroll_force_jump(
+            lscroll_scrollview* handle,
+            int64_t x_absolute,
+            int64_t y_absolute
+    ) {
+        lscroll_add_scroll(
+                handle,
+                x_absolute - handle->frame_pan.absolute_x,
+                y_absolute - handle->frame_pan.absolute_y);
     }
 }
 
