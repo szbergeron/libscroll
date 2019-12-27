@@ -10,8 +10,6 @@
 
 namespace events {
     struct pan_event {
-        //int64_t pan_x;
-        //int64_t pan_y;
         int64_t pan_amount;
     };
 
