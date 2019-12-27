@@ -1,6 +1,6 @@
 extern crate num;
-use std::ops;
 use std::f64;
+//use std::ops;
 
 /**
  * This library serves as an event interpretation library.
@@ -90,7 +90,8 @@ impl<T> AxisVector<T> where T: num::Num, T: PartialOrd, T: Copy {
     }
 }
 
-impl<T: num::Float> AxisVector<T> where T: std::convert::From<f64>, f64: std::convert::From<T> {
+//impl<T: num::Float> AxisVector<T> where T: std::convert::From<f64>, f64: std::convert::From<T> {
+impl AxisVector<f64> {
     fn decay_active(&self) -> bool {
         self.decaying && self.x > self.x_threshold && self.y > self.y_threshold
     }
@@ -229,10 +230,10 @@ impl Scrollview {
     }
 }
 
-// apologies, this is horrifying
-fn fling_decay<T: num::Float>(from: T) -> T where f64: Into<T>, T: Into<f64> {
+fn fling_decay(from: f64) -> f64 {
     //f64::from(from)
-    T::from(from.into().powf(1.32)).unwrap()
+    //T::from(from.into().powf(1.32)).unwrap()
+    from.powf(1.32)
     //T::from(f64::from(from).powf(1.32))
     //from.into::<f64>().powf(1.32).into::<T>()
 }
