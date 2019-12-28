@@ -10,15 +10,16 @@ Main library interface is implemented in src/lib.rs
 3. Use set\_avg\_frametime based on current FPS or some other metric to allow position prediction. If this information isn't available, a safe default is 0ms, but this will introduce additional perceptible lag
 4. If render and event loop are separate, split them here. Place the scrollview in an Arc<Mutex<>> to ensure atomic access.
     Note: scrollviews may be made atomic and internally mutable in the future. This change should not alter backwards compatibility, but should improve usability for this use case
-4a. Within event loop: {
-    5. Take any outstanding events from platform driver/provider (SDL, Libinput, Wayland event provider) and use push\_event() to add them to the internal queue.
-    6. Loop back to 5
+
+Within event loop: {
+5. Take any outstanding events from platform driver/provider (SDL, Libinput, Wayland event provider) and use push\_event() to add them to the internal queue.
+6. Loop back to 5
 }
 
-4b. Within render loop: {
-    5. Call set\_next\_frame\_predict() to set approximately how long it will be from now until content is rendered to screen, or 0 if unsure (at cost of additional latency)
-    6. Call step\_frame() to both account for any newly emplaced events, and to advance any ongoing animations by one tick
-    7. If animating() is true, use either get\_position\_absolute() or get\_position\_relative() to see where to move the viewport, or by how much. These calls are idempotent and non-mutating. Call them whenever is convenient after step\_frame()
+Within render loop: {
+5. Call set\_next\_frame\_predict() to set approximately how long it will be from now until content is rendered to screen, or 0 if unsure (at cost of additional latency)
+6. Call step\_frame() to both account for any newly emplaced events, and to advance any ongoing animations by one tick
+7. If animating() is true, use either get\_position\_absolute() or get\_position\_relative() to see where to move the viewport, or by how much. These calls are idempotent and non-mutating. Call them whenever is convenient after step\_frame()
 }
 
 That's it! Everything else is handled behind the scenes
