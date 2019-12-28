@@ -53,6 +53,8 @@ pub struct Scrollview {
     prior_position: AxisVector<f64>,
 }
 
+/// Describes a vector in terms of its 2 2d axis magnitudes,
+/// used often to describe transforms and offsets
 #[derive(Copy)]
 #[derive(Clone)]
 #[derive(Default)]
@@ -142,14 +144,25 @@ pub enum Event {
 
 // pub interface
 impl Scrollview {
+    /// Create a new scrollview with default settings
+    ///
+    /// Warning: these settings are unlikely to be
+    /// particularly useful, so set_geometry(), set_avg_frametime(), and any
+    /// other relevant initialization functions still need to be used
     pub fn new() -> Scrollview {
         Default::default()
     }
 
-    /// Primarily intended for ffi use, Scrollview should remain trivial
-    /// to drop, so this function is unecessary for use in a rust-only project
+    /// Deletes/deinitializes the current scrollview
+    ///
+    /// Primarily intended for ffi use, Scrollview implements Drop
+    /// where deinitialization is required, so this is only useful
+    /// for ffi use
     pub fn del(_: Scrollview) {}
 
+    /// Set the geometry for the given scrollview
+    ///
+    /// Can be used both on scrollview initialization and on scrollview resize
     pub fn set_geometry(
         &mut self,
         content_height: u64,
@@ -163,6 +176,8 @@ impl Scrollview {
         self.viewport_width = viewport_width;
     }
 
+    /// Add an event to the queue to be processed for the next call to
+    /// step_frame()
     pub fn push_event(
         &mut self,
         event: &Event
@@ -183,6 +198,9 @@ impl Scrollview {
 
     /// Advances scrollview state by a frame,
     /// Serves to step through animations one frame at a time
+    ///
+    /// After any event, continue to call this on every
+    /// page-flip (new frame) until animating() returns false
     pub fn step_frame(&mut self) {
         self.current_velocity.step_frame();
     }
@@ -205,10 +223,20 @@ impl Scrollview {
         //
     }
 
+    /// Get the position of the content's top-left corner relative to
+    /// the top-left corner of the viewport
+    ///
+    /// NOTE: either axis may be negative. This indicates an overscroll is occurring.
+    /// Recommended way of handling this is to checkerboard that area visually
+    /// and draw true to the provided geometry. This matches platform behavior for OSX and Windows,
+    /// as well as some Linux programs, and is often called the "rubber band effect"
     pub fn get_position_absolute(&self) -> AxisVector<f64> {
         self.current_position
     }
 
+    /// Get the position of the content's top-left corner relative to
+    /// its position before the most recent step_frame(), saying how much
+    /// the content should be moved from its last position
     pub fn get_position_relative(&self) -> AxisVector<f64> {
         self.current_position.difference(self.prior_position)
     }
@@ -230,10 +258,11 @@ impl Scrollview {
     }
 }
 
+// should be changed later to allow different curves, 
 fn fling_decay(from: f64) -> f64 {
     //f64::from(from)
     //T::from(from.into().powf(1.32)).unwrap()
-    from.powf(1.32)
+    from.powf(0.998)
     //T::from(f64::from(from).powf(1.32))
     //from.into::<f64>().powf(1.32).into::<T>()
 }
