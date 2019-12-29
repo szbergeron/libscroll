@@ -13,7 +13,7 @@ use std::f64;
 
 mod circular_backqueue;
 
-//use std::ops;
+use std::ops;
 
 
 /**
@@ -44,6 +44,8 @@ mod circular_backqueue;
  *      from earlier to clean up scrollview on exit
  */
 
+type Millis = f64;
+
 #[derive(Default)]
 pub struct Scrollview {
     content_height: u64,
@@ -54,10 +56,20 @@ pub struct Scrollview {
     current_velocity: AxisVector<f64>,
     current_position: AxisVector<f64>,
 
-    prior_position: AxisVector<f64>,
+    frametime: Millis, // millis
+    time_to_pageflip: Millis, // millis
+
+    current_timestamp: u64,
+
+    //prior_position: AxisVector<f64>,
+
+    //
 
     //event_queue: crate::circular_backqueue::ForgetfulLogQueue<Event>,
-    event_queue: circular_backqueue::ForgetfulLogQueue<AxisVector<f64>>,
+    
+    // pairing of a (timestamp, magnitude) for pan events
+    pan_log_x: circular_backqueue::ForgetfulLogQueue<(u64, f64)>,
+    pan_log_y: circular_backqueue::ForgetfulLogQueue<(u64, f64)>,
 }
 
 /// Describes a vector in terms of its 2 2d axis magnitudes,
@@ -91,6 +103,13 @@ impl<T> AxisVector<T> where T: num::Num, T: PartialOrd, T: Copy {
         }
     }
 
+    fn get_at(&self, axis: Axis) -> T {
+        match axis {
+            Axis::Horizontal => self.x,
+            Axis::Vertical => self.y
+        }
+    }
+
     fn append(&mut self, axis: Axis, magnitude: T) {
         match axis {
             Axis::Horizontal => self.x = magnitude + self.x,
@@ -111,8 +130,8 @@ impl AxisVector<f64> {
 
     fn step_frame(&mut self) {
         if self.decay_active() {
-            self.x = fling_decay(self.x);
-            self.y = fling_decay(self.y);
+            self.x = Scrollview::fling_decay(self.x);
+            self.y = Scrollview::fling_decay(self.y);
         }
 
         if self.x < self.x_threshold && self.y < self.y_threshold {
@@ -122,18 +141,18 @@ impl AxisVector<f64> {
 }
 
 // TODO: change to pythagorean subtract
-/*impl<T> ops::Sub<AxisVector<T>> for AxisVector<T> where T: num::Num, T: PartialOrd {
+impl<T> ops::Add<AxisVector<T>> for AxisVector<T> where T: num::Num, T: PartialOrd, T: Copy {
     type Output = AxisVector<T>;
 
-    fn sub(self, rhs: AxisVector<T>) -> AxisVector<T> {
+    fn add(self, rhs: AxisVector<T>) -> AxisVector<T> {
         AxisVector {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
             ..self
 
         }
     }
-}*/
+}
 
 #[derive(Copy)]
 #[derive(Clone)]
@@ -144,9 +163,9 @@ pub enum Axis {
 
 //#[derive(Default)]
 pub enum Event {
-    Pan { axis: Axis, amount: i32 }, // doesn't use AxisVector since some platforms only send one pan axis at once // TODO: consider AxisVector[Optional]
-    Fling,
-    Interrupt,
+    Pan { timestamp: u64, axis: Axis, amount: i32 }, // doesn't use AxisVector since some platforms only send one pan axis at once // TODO: consider AxisVector[Optional]
+    Fling { timestamp: u64 },
+    Interrupt { timestamp: u64 },
     //Zoom?
 }
 
@@ -201,9 +220,9 @@ impl Scrollview {
         event: &Event
     ) {
         match event {
-            Event::Pan { axis, amount } => self.push_pan(*axis, *amount),
-            Event::Fling => self.push_fling(),
-            Event::Interrupt => self.push_interrupt(),
+            Event::Pan { timestamp, axis, amount } => self.push_pan(*timestamp, *axis, *amount),
+            Event::Fling {..} => self.push_fling(),
+            Event::Interrupt {..} => self.push_interrupt(),
         }
     }
 
@@ -219,7 +238,9 @@ impl Scrollview {
     ///
     /// After any event, continue to call this on every
     /// page-flip (new frame) until animating() returns false
-    pub fn step_frame(&mut self) {
+    pub fn step_frame(&mut self, timestamp: Option<u64>) {
+        self.current_timestamp = timestamp.unwrap_or(1);
+
         self.current_velocity.step_frame();
     }
     
@@ -230,7 +251,7 @@ impl Scrollview {
     ///
     /// Used for position prediction (better pan tracking)
     pub fn set_avg_frametime(&mut self, milliseconds: f64) {
-        //
+        self.frametime = milliseconds;
     }
 
     /// Indicate how long there is until the next frame will be rendered
@@ -238,7 +259,7 @@ impl Scrollview {
     ///
     /// Used for position prediction (better pan tracking)
     pub fn set_next_frame_predict(&mut self, milliseconds: f64) {
-        //
+        self.time_to_pageflip = milliseconds;
     }
 
     /// Get the position of the content's top-left corner relative to
@@ -249,22 +270,33 @@ impl Scrollview {
     /// and draw true to the provided geometry. This matches platform behavior for OSX and Windows,
     /// as well as some Linux programs, and is often called the "rubber band effect"
     pub fn get_position_absolute(&self) -> AxisVector<f64> {
-        self.current_position
+        self.current_position + self.get_overshoot()
     }
 
-    /// Get the position of the content's top-left corner relative to
-    /// its position before the most recent step_frame(), saying how much
-    /// the content should be moved from its last position
-    pub fn get_position_relative(&self) -> AxisVector<f64> {
+    // Get the position of the content's top-left corner relative to
+    // its position before the most recent step_frame(), saying how much
+    // the content should be moved from its last position
+    //
+    // Note: may support in future, but unclear if this provides any benefits currently, and is
+    // difficult to support with prediction. Currently not provided.
+    /*pub fn get_position_relative(&self) -> AxisVector<f64> {
         self.current_position.difference(self.prior_position)
-    }
+    }*/
 }
 
 // private impl
 impl Scrollview {
-    fn push_pan(&mut self, axis: Axis, amount: i32) {
-        self.current_velocity.update(axis, f64::from(amount));
-        self.current_position.append(axis, f64::from(amount));
+    fn push_pan(&mut self, timestamp: u64, axis: Axis, amount: i32) {
+        match axis {
+            Axis::Horizontal => self.pan_log_x.push((timestamp, f64::from(amount))),
+            Axis::Vertical => self.pan_log_y.push((timestamp, f64::from(amount))),
+        }
+        self.update_velocity();
+
+        self.current_position.append(axis, f64::from(amount) * Self::accelerate(self.current_velocity.get_at(axis)));
+
+        //self.current_velocity.update(axis, f64::from(amount));
+        //self.current_position.append(axis, f64::from(amount) * self.current_velocity.get_at(axis));
     }
 
     fn push_fling(&mut self) {
@@ -272,40 +304,43 @@ impl Scrollview {
     }
 
     fn push_interrupt(&mut self) {
-        //
+        self.pan_log_x.clear();
+        self.pan_log_y.clear();
+        self.current_velocity = AxisVector { x: 0.0, y: 0.0, ..self.current_velocity };
     }
-}
 
-// should be changed later to allow different curves, 
-fn fling_decay(from: f64) -> f64 {
-    //f64::from(from)
-    //T::from(from.into().powf(1.32)).unwrap()
-    from.powf(0.998)
-    //T::from(f64::from(from).powf(1.32))
-    //from.into::<f64>().powf(1.32).into::<T>()
-}
+    fn get_overshoot(&self) -> AxisVector<f64> {
+        let time_to_target = (self.frametime / 2.0) + self.time_to_pageflip;
 
-impl circular_backqueue::ForgetfulLogQueue<AxisVector<f64>> {
-    pub fn get_or_avg(&self, position: usize) -> AxisVector<f64> {
-        let ret = self.get(position);
-
-        match ret {
-            Some(av) => av.clone(),
-            None => {
-                let mut sum_av: AxisVector<f64> = Default::default();
-                for av in self.all() {
-                    sum_av.x += av.x;
-                    sum_av.y += av.y;
-                }
-
-                sum_av.x /= self.size() as f64;
-                sum_av.y /= self.size() as f64;
-
-                sum_av
-            }
+        AxisVector {
+            x: self.current_velocity.x * time_to_target,
+            y: self.current_velocity.y * time_to_target,
+            decaying: false,
+            ..Default::default()
         }
     }
+
+    // Uses backlog and input acceleration curve to create a current velocity
+    fn update_velocity(&mut self) {
+        //
+    }
+
+    // TODO: move to pref
+    fn accelerate(from: f64) -> f64 {
+        from.powf(1.34)
+    }
+
+    // should be changed later to allow different curves, 
+    fn fling_decay(from: f64) -> f64 {
+        //f64::from(from)
+        //T::from(from.into().powf(1.32)).unwrap()
+        from.powf(0.998)
+        //T::from(f64::from(from).powf(1.32))
+        //from.into::<f64>().powf(1.32).into::<T>()
+    }
 }
+
+
 
 /*
  * Impl notes

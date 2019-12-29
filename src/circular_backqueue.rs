@@ -56,4 +56,35 @@ impl<T> ForgetfulLogQueue<T> {
     pub fn size(&self) -> usize {
         self.size
     }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.size = 0;
+    }
+}
+
+impl ForgetfulLogQueue<(u64, f64)> {
+    pub fn get_or_avg(&self, position: usize) -> f64 {
+        let ret = self.get(position);
+
+        match ret {
+            //Some(av) => av.clone(),
+            Some(n) => n.1,
+            None => {
+                //let mut sum_av: AxisVector<f64> = Default::default();
+                /*let mut sum: f64
+                for av in self.all() {
+                    sum_av.x += av.x;
+                    sum_av.y += av.y;
+                }*/
+
+                let sum: f64 = self.data.iter().map(|tp| { tp.1 }).sum();
+
+                //sum_av.x /= self.size() as f64;
+                //sum_av.y /= self.size() as f64;
+
+                sum / self.size() as f64
+            }
+        }
+    }
 }
