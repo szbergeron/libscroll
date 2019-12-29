@@ -1,8 +1,4 @@
-extern crate num;
-use std::f64;
-//use std::ops;
-
-/**
+/*!
  * This library serves as an event interpretation library.
  * To use, you will need to take the raw events you recieve
  * on your platform and adapt it to a compatible input
@@ -11,6 +7,14 @@ use std::f64;
  * long until the current frame will be rendered. This allows overshoot
  * calculation to take place.
  */
+
+extern crate num;
+use std::f64;
+
+mod circular_backqueue;
+
+//use std::ops;
+
 
 /**
  * Example usage:
@@ -51,6 +55,9 @@ pub struct Scrollview {
     current_position: AxisVector<f64>,
 
     prior_position: AxisVector<f64>,
+
+    //event_queue: crate::circular_backqueue::ForgetfulLogQueue<Event>,
+    event_queue: circular_backqueue::ForgetfulLogQueue<AxisVector<f64>>,
 }
 
 /// Describes a vector in terms of its 2 2d axis magnitudes,
@@ -135,6 +142,7 @@ pub enum Axis {
     Vertical,
 }
 
+//#[derive(Default)]
 pub enum Event {
     Pan { axis: Axis, amount: i32 }, // doesn't use AxisVector since some platforms only send one pan axis at once // TODO: consider AxisVector[Optional]
     Fling,
@@ -150,6 +158,16 @@ impl Scrollview {
     /// particularly useful, so set_geometry(), set_avg_frametime(), and any
     /// other relevant initialization functions still need to be used
     pub fn new() -> Scrollview {
+        /*Scrollview {
+            prior_position: Default::default(),
+            current_position: Default::default(),
+            current_velocity: Default::default(),
+            event_queue: circular_backqueue::ForgetfulLogQueue::new(10),
+            content_height: 0,
+            content_width: 0,
+            viewport_height: 0,
+            viewport_width: 0,
+        }*/
         Default::default()
     }
 
@@ -265,6 +283,28 @@ fn fling_decay(from: f64) -> f64 {
     from.powf(0.998)
     //T::from(f64::from(from).powf(1.32))
     //from.into::<f64>().powf(1.32).into::<T>()
+}
+
+impl circular_backqueue::ForgetfulLogQueue<AxisVector<f64>> {
+    pub fn get_or_avg(&self, position: usize) -> AxisVector<f64> {
+        let ret = self.get(position);
+
+        match ret {
+            Some(av) => av.clone(),
+            None => {
+                let mut sum_av: AxisVector<f64> = Default::default();
+                for av in self.all() {
+                    sum_av.x += av.x;
+                    sum_av.y += av.y;
+                }
+
+                sum_av.x /= self.size() as f64;
+                sum_av.y /= self.size() as f64;
+
+                sum_av
+            }
+        }
+    }
 }
 
 /*
