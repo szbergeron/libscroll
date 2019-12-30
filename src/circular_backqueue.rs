@@ -1,6 +1,5 @@
 #[derive(Default)]
 pub struct ForgetfulLogQueue<T> {
-    //tail: usize,
     head: usize,
     size: usize,
     capacity: usize,
@@ -77,17 +76,7 @@ impl ForgetfulLogQueue<(u64, f64)> {
             //Some(av) => av.clone(),
             Some(n) => n.clone(),
             None => {
-                //let mut sum_av: AxisVector<f64> = Default::default();
-                /*let mut sum: f64
-                for av in self.all() {
-                    sum_av.x += av.x;
-                    sum_av.y += av.y;
-                }*/
-
                 let sum: f64 = self.data.iter().map(|tp| { tp.1 }).sum();
-
-                //sum_av.x /= self.size() as f64;
-                //sum_av.y /= self.size() as f64;
 
                 (0, sum / self.size() as f64) // put as far in the past as possible to reduce impact
             }

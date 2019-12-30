@@ -57,11 +57,6 @@ pub struct Scrollview {
 
     input_per_frame_log: circular_backqueue::ForgetfulLogQueue<u32>,
 
-    //prior_position: AxisVector<f64>,
-
-    //
-
-    //event_queue: crate::circular_backqueue::ForgetfulLogQueue<Event>,
     
     // pairing of a (timestamp, magnitude) for pan events
     pan_log_x: circular_backqueue::ForgetfulLogQueue<(u64, f64)>,
@@ -92,7 +87,7 @@ impl<T> AxisVector<T> where T: num::Num, T: PartialOrd, T: Copy {
         }
     }
 
-    fn update(&mut self, axis: Axis, magnitude: T) {
+    fn replace(&mut self, axis: Axis, magnitude: T) {
         match axis {
             Axis::Horizontal => self.x = magnitude,
             Axis::Vertical => self.y = magnitude,
@@ -106,7 +101,7 @@ impl<T> AxisVector<T> where T: num::Num, T: PartialOrd, T: Copy {
         }
     }
 
-    fn append(&mut self, axis: Axis, magnitude: T) {
+    fn update(&mut self, axis: Axis, magnitude: T) {
         match axis {
             Axis::Horizontal => self.x = magnitude + self.x,
             Axis::Vertical => self.y = magnitude + self.y,
@@ -114,7 +109,6 @@ impl<T> AxisVector<T> where T: num::Num, T: PartialOrd, T: Copy {
     }
 }
 
-//impl<T: num::Float> AxisVector<T> where T: std::convert::From<f64>, f64: std::convert::From<T> {
 impl AxisVector<f64> {
     fn decay_active(&self) -> bool {
         self.decaying && self.x > self.x_threshold && self.y > self.y_threshold
@@ -136,7 +130,8 @@ impl AxisVector<f64> {
     }
 }
 
-// TODO: change to pythagorean subtract
+// TODO: consider naming, doing pythagorean add on + may make more sense, with alternative op to
+// simply add elems
 impl<T> ops::Add<AxisVector<T>> for AxisVector<T> where T: num::Num, T: PartialOrd, T: Copy {
     type Output = AxisVector<T>;
 
@@ -172,16 +167,6 @@ impl Scrollview {
     /// particularly useful, so set_geometry(), set_avg_frametime(), and any
     /// other relevant initialization functions still need to be used
     pub fn new() -> Scrollview {
-        /*Scrollview {
-            prior_position: Default::default(),
-            current_position: Default::default(),
-            current_velocity: Default::default(),
-            event_queue: circular_backqueue::ForgetfulLogQueue::new(10),
-            content_height: 0,
-            content_width: 0,
-            viewport_height: 0,
-            viewport_width: 0,
-        }*/
         Scrollview {
             input_per_frame_log: circular_backqueue::ForgetfulLogQueue::new(SAMPLE_OVER_X_FRAMES),
             ..Default::default()
@@ -299,13 +284,6 @@ impl Scrollview {
             Axis::Horizontal => self.pan_log_x.push((timestamp, f64::from(amount))),
             Axis::Vertical => self.pan_log_y.push((timestamp, f64::from(amount))),
         }
-        //self.update_velocity();
-
-        //self.current_position.append(axis, f64::from(amount) * Self::accelerate(self.current_velocity.get_at(axis)));
-        //self.current_position.append(axis, Self::accelerate(self.current_velocity.get_at(axis)));
-
-        //self.current_velocity.update(axis, f64::from(amount));
-        //self.current_position.append(axis, f64::from(amount) * self.current_velocity.get_at(axis));
     }
 
     fn push_fling(&mut self) {
@@ -352,7 +330,6 @@ impl Scrollview {
             // need to do weighted averages
             for (log, sum, weight) in axes {
                 for i in 0..(MAX_EVENTS_CONSIDERED - 1) {
-                    //let (tstamp, val) = log.get(i);
                     match log.get(i as usize) {
                         None => (),
                         Some((timestamp, magnitude)) => {
@@ -388,15 +365,3 @@ impl Scrollview {
         from.powf(FLING_FRICTION_FACTOR)
     }
 }
-
-
-
-/*
- * Impl notes
- *
- * Bounce:
- *
- * Fling:
- *
- * Accel:
- */
