@@ -15,34 +15,14 @@ mod circular_backqueue;
 
 use std::ops;
 
+// configs
+const MAX_EVENTS_CONSIDERED: u32 = 5;
 
-/**
- * Example usage:
- * // TODO update usage example
- * 1. Create some `struct scrollview` locally and pass geometry
- *      and expected behavior as specified in struct
- *
- * 2. Pass said struct by value to create_scrollview(), storing
- *      the returned scrollview handle for future use
- *      in conjunction with the associated UI scrollview
- *
- * 3. Use set_predict() with estimations of average frametimes
- *      and how far into a frame period each get_pos/get_pan call
- *      will occur
- *
- * 4. In event loop, recieve and pass any scroll events through
- *      add_scroll(), add_scroll_interrupt(), add_scroll_release()
- *      and related event signaling functions. Strict ordering
- *      or summation are not required here, just pass info as
- *      it comes in from the device
- *
- * 5. On each render loop iteration, call mark_frame() and then use get_pan_[x/y]() or
- *      get_pos_[x/y]() to find where to transform the content to
- *      under the viewport, no intermediate processing required
- *
- * 6. Call destroy_scrollview(), passing the scrollview handle
- *      from earlier to clean up scrollview on exit
- */
+const ENABLE_VELOCITY_SMOOTHING: bool = true;
+
+/// Used to specify over what window (in number of frames) the ratio of input events to frames
+/// should be sampled. This is used to interpolate input events
+const SAMPLE_OVER_X_FRAMES: u32 = 10;
 
 type Millis = f64;
 
@@ -60,6 +40,10 @@ pub struct Scrollview {
     time_to_pageflip: Millis, // millis
 
     current_timestamp: u64,
+
+    interpolation_ratio: f64,
+
+    input_per_frame_log: circular_backqueue::ForgetfulLogQueue<u32>,
 
     //prior_position: AxisVector<f64>,
 
@@ -187,7 +171,10 @@ impl Scrollview {
             viewport_height: 0,
             viewport_width: 0,
         }*/
-        Default::default()
+        Scrollview {
+            input_per_frame_log: circular_backqueue::ForgetfulLogQueue::new(SAMPLE_OVER_X_FRAMES as usize),
+            ..Default::default()
+        }
     }
 
     /// Deletes/deinitializes the current scrollview
@@ -293,7 +280,10 @@ impl Scrollview {
         }
         self.update_velocity();
 
-        self.current_position.append(axis, f64::from(amount) * Self::accelerate(self.current_velocity.get_at(axis)));
+        // TODO: reevaluate this functionality, probably the wrong eq, just want to scale, may
+        // include negative
+        //self.current_position.append(axis, f64::from(amount) * Self::accelerate(self.current_velocity.get_at(axis)));
+        self.current_position.append(axis, Self::accelerate(self.current_velocity.get_at(axis)));
 
         //self.current_velocity.update(axis, f64::from(amount));
         //self.current_position.append(axis, f64::from(amount) * self.current_velocity.get_at(axis));
@@ -320,9 +310,59 @@ impl Scrollview {
         }
     }
 
-    // Uses backlog and input acceleration curve to create a current velocity
+    // Uses backlog and input acceleration curve to smooth recent pan deltas
     fn update_velocity(&mut self) {
-        //
+        if ENABLE_VELOCITY_SMOOTHING == false {
+            // last input vector on each axis is unsmoothed velocity
+            self.current_velocity = AxisVector {
+                x: self.pan_log_x.get_or_avg(0).1,
+                y: self.pan_log_y.get_or_avg(0).1,
+                ..self.current_velocity
+            }
+        } else {
+            // sum total weights
+            let mut sum_x = 0.0;
+            let mut sum_y = 0.0;
+
+            // end divisor for calculating weighting
+            let mut weight_x = 0.0;
+            let mut weight_y = 0.0;
+            
+            let axes = vec![(&self.pan_log_x, &mut sum_x, &mut weight_x), (&self.pan_log_y, &mut sum_y, &mut weight_y)];
+
+            // need to do weighted averages
+            for (log, sum, weight) in axes {
+                for i in 0..(MAX_EVENTS_CONSIDERED - 1) {
+                    //let (tstamp, val) = log.get(i);
+                    match log.get(i as usize) {
+                        None => (),
+                        Some((timestamp, magnitude)) => {
+                            let staleness = self.current_timestamp - timestamp;
+                            let staleness_mult_factor = 1.0 / (staleness as f64);
+
+                            *weight += staleness_mult_factor;
+
+                            *sum += magnitude * staleness_mult_factor;
+                        }
+                    }
+
+                    //*sum = val * (tstamp as f64 / self.current_timestamp as f64) + *sum; // &mut is weird apparently around auto-deref
+                }
+            }
+
+            let avg_x = sum_x / weight_x;
+            let avg_y = sum_y / weight_y;
+
+            self.current_velocity = AxisVector {
+                x: avg_x,
+                y: avg_y,
+                ..self.current_velocity
+            }
+            /*for i in 0..4 {
+                //sum_x += self.pan_log_x.get_or_avg(i) * ;
+                //sum_y += self.pan_log_y.get_or_avg(i) / (1 + i);
+            }*/
+        }
     }
 
     // TODO: move to pref

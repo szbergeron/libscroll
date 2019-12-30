@@ -35,13 +35,19 @@ impl<T> ForgetfulLogQueue<T> {
     }
 
     pub fn push(&mut self, object: T) {
+        // pre-increment so that get... works correctly
+        self.head += 1;
+        self.head = self.head % self.capacity;
+
         if self.size < self.capacity {
             self.size += 1;
         }
 
         self.data[self.head] = object;
-        self.head += 1;
-        self.head = self.head % self.capacity;
+    }
+
+    pub fn replace_cur(&mut self, object: T) {
+        self.data[self.head] = object;
     }
 
     pub fn empty(&self) -> bool {
@@ -64,12 +70,12 @@ impl<T> ForgetfulLogQueue<T> {
 }
 
 impl ForgetfulLogQueue<(u64, f64)> {
-    pub fn get_or_avg(&self, position: usize) -> f64 {
+    pub fn get_or_avg(&self, position: usize) -> (u64, f64) {
         let ret = self.get(position);
 
         match ret {
             //Some(av) => av.clone(),
-            Some(n) => n.1,
+            Some(n) => n.clone(),
             None => {
                 //let mut sum_av: AxisVector<f64> = Default::default();
                 /*let mut sum: f64
@@ -83,7 +89,7 @@ impl ForgetfulLogQueue<(u64, f64)> {
                 //sum_av.x /= self.size() as f64;
                 //sum_av.y /= self.size() as f64;
 
-                sum / self.size() as f64
+                (0, sum / self.size() as f64) // put as far in the past as possible to reduce impact
             }
         }
     }
