@@ -3,6 +3,8 @@ name = "libscroll"
 version = "0.1.0"
 authors = ["Sawyer Bergeron <sawyerbergeron@gmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "Scrollview event handling library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
