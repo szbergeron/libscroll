@@ -16,13 +16,25 @@ mod circular_backqueue;
 use std::ops;
 
 // configs
+
+/// Determines how much "smoothing" happens, at a direct cost to responsiveness to an action
+/// A large number means more past events will be counted in the current velocity,
+/// which avoids skipping over or being "hitched" by anomalies, but also means
+/// that changes to velocity after the initial touch are responded to slower
 const MAX_EVENTS_CONSIDERED: u32 = 5;
 
+/// Determines whether the prior config (MAX_EVENTS_CONSIDERED) is used.
+/// If false, no smoothing occurs and the velocity is simply the most recent event
+/// Equivalent to setting MAX_EVENTS_CONSIDERED to 1, but allows a performance shortcut
 const ENABLE_VELOCITY_SMOOTHING: bool = true;
 
+const FLING_FRICTION_FACTOR: f64 = 0.998;
+
+const PAN_ACCELERATION_FACTOR: f64 = 1.34;
+
 /// Used to specify over what window (in number of frames) the ratio of input events to frames
-/// should be sampled. This is used to interpolate input events
-const SAMPLE_OVER_X_FRAMES: u32 = 10;
+/// should be derived. The ratio is then used to interpolate/extrapolate input events
+const SAMPLE_OVER_X_FRAMES: usize = 10;
 
 type Millis = f64;
 
@@ -36,8 +48,8 @@ pub struct Scrollview {
     current_velocity: AxisVector<f64>,
     current_position: AxisVector<f64>,
 
-    frametime: Millis, // millis
-    time_to_pageflip: Millis, // millis
+    frametime: Millis,
+    time_to_pageflip: Millis,
 
     current_timestamp: u64,
 
@@ -145,7 +157,6 @@ pub enum Axis {
     Vertical,
 }
 
-//#[derive(Default)]
 pub enum Event {
     Pan { timestamp: u64, axis: Axis, amount: i32 }, // doesn't use AxisVector since some platforms only send one pan axis at once // TODO: consider AxisVector[Optional]
     Fling { timestamp: u64 },
@@ -172,7 +183,7 @@ impl Scrollview {
             viewport_width: 0,
         }*/
         Scrollview {
-            input_per_frame_log: circular_backqueue::ForgetfulLogQueue::new(SAMPLE_OVER_X_FRAMES as usize),
+            input_per_frame_log: circular_backqueue::ForgetfulLogQueue::new(SAMPLE_OVER_X_FRAMES),
             ..Default::default()
         }
     }
@@ -226,9 +237,19 @@ impl Scrollview {
     /// After any event, continue to call this on every
     /// page-flip (new frame) until animating() returns false
     pub fn step_frame(&mut self, timestamp: Option<u64>) {
+        self.interpolation_ratio = self.input_per_frame_log.all().iter().sum::<u32>() as f64 / self.input_per_frame_log.size() as f64;
+
         self.current_timestamp = timestamp.unwrap_or(1);
 
         self.current_velocity.step_frame();
+
+        self.update_velocity();
+
+        // update position with interpolated velocity
+        self.current_position.x += Self::accelerate(self.current_velocity.x) * self.interpolation_ratio * self.frametime;
+        self.current_position.y += Self::accelerate(self.current_velocity.y) * self.interpolation_ratio * self.frametime;
+
+        self.input_per_frame_log.push(0); // add new frame for events to pile into
     }
     
     /// Should be called at scrollview initialization time.
@@ -278,12 +299,10 @@ impl Scrollview {
             Axis::Horizontal => self.pan_log_x.push((timestamp, f64::from(amount))),
             Axis::Vertical => self.pan_log_y.push((timestamp, f64::from(amount))),
         }
-        self.update_velocity();
+        //self.update_velocity();
 
-        // TODO: reevaluate this functionality, probably the wrong eq, just want to scale, may
-        // include negative
         //self.current_position.append(axis, f64::from(amount) * Self::accelerate(self.current_velocity.get_at(axis)));
-        self.current_position.append(axis, Self::accelerate(self.current_velocity.get_at(axis)));
+        //self.current_position.append(axis, Self::accelerate(self.current_velocity.get_at(axis)));
 
         //self.current_velocity.update(axis, f64::from(amount));
         //self.current_position.append(axis, f64::from(amount) * self.current_velocity.get_at(axis));
@@ -345,8 +364,6 @@ impl Scrollview {
                             *sum += magnitude * staleness_mult_factor;
                         }
                     }
-
-                    //*sum = val * (tstamp as f64 / self.current_timestamp as f64) + *sum; // &mut is weird apparently around auto-deref
                 }
             }
 
@@ -358,25 +375,17 @@ impl Scrollview {
                 y: avg_y,
                 ..self.current_velocity
             }
-            /*for i in 0..4 {
-                //sum_x += self.pan_log_x.get_or_avg(i) * ;
-                //sum_y += self.pan_log_y.get_or_avg(i) / (1 + i);
-            }*/
         }
     }
 
     // TODO: move to pref
     fn accelerate(from: f64) -> f64 {
-        from.powf(1.34)
+        from.powf(PAN_ACCELERATION_FACTOR)
     }
 
     // should be changed later to allow different curves, 
     fn fling_decay(from: f64) -> f64 {
-        //f64::from(from)
-        //T::from(from.into().powf(1.32)).unwrap()
-        from.powf(0.998)
-        //T::from(f64::from(from).powf(1.32))
-        //from.into::<f64>().powf(1.32).into::<T>()
+        from.powf(FLING_FRICTION_FACTOR)
     }
 }
 
