@@ -30,6 +30,8 @@ const ENABLE_VELOCITY_SMOOTHING: bool = true;
 
 const FLING_FRICTION_FACTOR: f64 = 0.998;
 
+const f: f64 = PAN_ACCELERATION_FACTOR;
+
 const PAN_ACCELERATION_FACTOR: f64 = 1.34;
 
 /// Used to specify over what window (in number of frames) the ratio of input events to frames
@@ -364,4 +366,8 @@ impl Scrollview {
     fn fling_decay(from: f64) -> f64 {
         from.powf(FLING_FRICTION_FACTOR)
     }
+}
+
+fn f() -> i32 {
+    "hello"
 }
