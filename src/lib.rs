@@ -15,6 +15,9 @@ mod circular_backqueue;
 
 use std::ops;
 
+//#[macro_use]
+//extern crate smart_default;
+
 // configs
 
 /// Determines how much "smoothing" happens, at a direct cost to responsiveness to an action
@@ -30,9 +33,7 @@ const ENABLE_VELOCITY_SMOOTHING: bool = true;
 
 const FLING_FRICTION_FACTOR: f64 = 0.998;
 
-const f: f64 = PAN_ACCELERATION_FACTOR;
-
-const PAN_ACCELERATION_FACTOR: f64 = 1.34;
+const PAN_ACCELERATION_FACTOR_TOUCHPAD: f64 = 1.34;
 
 /// Used to specify over what window (in number of frames) the ratio of input events to frames
 /// should be derived. The ratio is then used to interpolate/extrapolate input events
@@ -49,6 +50,8 @@ pub struct Scrollview {
 
     current_velocity: AxisVector<f64>,
     current_position: AxisVector<f64>,
+
+    current_source: Source,
 
     frametime: Millis,
     time_to_pageflip: Millis,
@@ -120,10 +123,10 @@ impl AxisVector<f64> {
         self.decaying = true;
     }
 
-    fn step_frame(&mut self) {
+    fn step_frame(&mut self, device: Source) {
         if self.decay_active() {
-            self.x = Scrollview::fling_decay(self.x);
-            self.y = Scrollview::fling_decay(self.y);
+            self.x = Scrollview::fling_decay(self.x, device);
+            self.y = Scrollview::fling_decay(self.y, device);
         }
 
         if self.x < self.x_threshold && self.y < self.y_threshold {
@@ -152,6 +155,23 @@ impl<T> ops::Add<AxisVector<T>> for AxisVector<T> where T: num::Num, T: PartialO
 pub enum Axis {
     Horizontal,
     Vertical,
+}
+
+#[derive(Copy)]
+#[derive(Clone)]
+pub enum Source {
+    Undefined,
+    Touchscreen,
+    Touchpad,
+    Mousewheel,
+    PreciseMousewheel,
+    Passthrough,
+    KineticPassthrough,
+    Previous,
+}
+
+impl Default for Source {
+    fn default() -> Self { Source::Undefined }
 }
 
 /*pub enum Event {
@@ -233,13 +253,14 @@ impl Scrollview {
 
         self.current_timestamp = timestamp.unwrap_or(1);
 
-        self.current_velocity.step_frame();
+        //self.current_velocity = self.current_velocity.clone().step_frame(&self);
+        self.current_velocity.step_frame(self.current_source);
 
         self.update_velocity();
 
         // update position with interpolated velocity
-        self.current_position.x += Self::accelerate(self.current_velocity.x) * self.interpolation_ratio * self.frametime;
-        self.current_position.y += Self::accelerate(self.current_velocity.y) * self.interpolation_ratio * self.frametime;
+        self.current_position.x += Self::accelerate(self.current_velocity.x, self.current_source) * self.interpolation_ratio * self.frametime;
+        self.current_position.y += Self::accelerate(self.current_velocity.y, self.current_source) * self.interpolation_ratio * self.frametime;
 
         self.input_per_frame_log.push(0); // add new frame for events to pile into
     }
@@ -282,10 +303,7 @@ impl Scrollview {
     /*pub fn get_position_relative(&self) -> AxisVector<f64> {
         self.current_position.difference(self.prior_position)
     }*/
-}
 
-// private impl
-impl Scrollview {
     pub fn push_pan(&mut self, timestamp: Option<u64>, axis: Axis, amount: f64) {
         match axis {
             Axis::Horizontal => self.pan_log_x.push((timestamp.unwrap_or(self.current_timestamp), amount)),
@@ -303,6 +321,15 @@ impl Scrollview {
         self.current_velocity = AxisVector { x: 0.0, y: 0.0, ..self.current_velocity };
     }
 
+    /// Set what device type is going to be providing any events that follow until the next source
+    /// is declared
+    pub fn set_source(&mut self, source: Source) {
+        //
+    }
+}
+
+// private impl
+impl Scrollview {
     fn get_overshoot(&self) -> AxisVector<f64> {
         let time_to_target = (self.frametime / 2.0) + self.time_to_pageflip;
 
@@ -363,12 +390,18 @@ impl Scrollview {
     }
 
     // TODO: move to pref
-    fn accelerate(from: f64) -> f64 {
-        from.powf(PAN_ACCELERATION_FACTOR)
+    fn accelerate(from: f64, device: Source) -> f64 {
+        match device {
+            Source::Touchpad => from.powf(PAN_ACCELERATION_FACTOR_TOUCHPAD),
+            _ => from,
+        }
     }
 
     // should be changed later to allow different curves, 
-    fn fling_decay(from: f64) -> f64 {
-        from.powf(FLING_FRICTION_FACTOR)
+    fn fling_decay(from: f64, device: Source) -> f64 {
+        match device {
+            Source::Touchpad | Source::KineticPassthrough => from.powf(FLING_FRICTION_FACTOR),
+            _ => 0.0,
+        }
     }
 }
