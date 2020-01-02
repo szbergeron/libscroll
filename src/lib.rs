@@ -154,12 +154,12 @@ pub enum Axis {
     Vertical,
 }
 
-pub enum Event {
+/*pub enum Event {
     Pan { timestamp: u64, axis: Axis, amount: i32 }, // doesn't use AxisVector since some platforms only send one pan axis at once // TODO: consider AxisVector[Optional]
     Fling { timestamp: u64 },
     Interrupt { timestamp: u64 },
     //Zoom?
-}
+}*/
 
 // pub interface
 impl Scrollview {
@@ -180,6 +180,8 @@ impl Scrollview {
     /// Primarily intended for ffi use, Scrollview implements Drop
     /// where deinitialization is required, so this is only useful
     /// for ffi use
+    ///
+    /// NOTE: likely will be removed, not sure why I put this in here to begin with
     pub fn del(_: Scrollview) {}
 
     /// Set the geometry for the given scrollview
@@ -200,7 +202,10 @@ impl Scrollview {
 
     /// Add an event to the queue to be processed for the next call to
     /// step_frame()
-    pub fn push_event(
+    /// NOTE: doesn't simplify usage much and hurts ffi interop, so currently exposing the
+    /// individual push_... functions instead (impl complexity is similar/same between both
+    /// methods)
+    /*pub fn push_event(
         &mut self,
         event: &Event
     ) {
@@ -209,7 +214,7 @@ impl Scrollview {
             Event::Fling {..} => self.push_fling(),
             Event::Interrupt {..} => self.push_interrupt(),
         }
-    }
+    }*/
 
     /// True if scrollview should continue to be polled
     /// even in absence of events (fling or other 
@@ -281,18 +286,18 @@ impl Scrollview {
 
 // private impl
 impl Scrollview {
-    fn push_pan(&mut self, timestamp: u64, axis: Axis, amount: i32) {
+    pub fn push_pan(&mut self, timestamp: Option<u64>, axis: Axis, amount: f64) {
         match axis {
-            Axis::Horizontal => self.pan_log_x.push((timestamp, f64::from(amount))),
-            Axis::Vertical => self.pan_log_y.push((timestamp, f64::from(amount))),
+            Axis::Horizontal => self.pan_log_x.push((timestamp.unwrap_or(self.current_timestamp), amount)),
+            Axis::Vertical => self.pan_log_y.push((timestamp.unwrap_or(self.current_timestamp), amount)),
         }
     }
 
-    fn push_fling(&mut self) {
+    pub fn push_fling(&mut self) {
         self.current_velocity.decay_start();
     }
 
-    fn push_interrupt(&mut self) {
+    pub fn push_interrupt(&mut self) {
         self.pan_log_x.clear();
         self.pan_log_y.clear();
         self.current_velocity = AxisVector { x: 0.0, y: 0.0, ..self.current_velocity };
@@ -366,8 +371,4 @@ impl Scrollview {
     fn fling_decay(from: f64) -> f64 {
         from.powf(FLING_FRICTION_FACTOR)
     }
-}
-
-fn f() -> i32 {
-    "hello"
 }
