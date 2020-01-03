@@ -7,7 +7,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "libscroll"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "num 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

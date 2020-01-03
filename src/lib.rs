@@ -324,7 +324,7 @@ impl Scrollview {
     /// Set what device type is going to be providing any events that follow until the next source
     /// is declared
     pub fn set_source(&mut self, source: Source) {
-        //
+        self.current_source = source;
     }
 }
 
