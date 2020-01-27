@@ -39,8 +39,16 @@ const PAN_ACCELERATION_FACTOR_TOUCHPAD: f64 = 1.34;
 /// should be derived. The ratio is then used to interpolate/extrapolate input events
 const SAMPLE_OVER_X_FRAMES: usize = 10;
 
+/// The granularity through which displacement is integrated from the velocity function (sampled
+/// with velocity_at(f64))
+const INTEGRATION_DX: f64 = 0.07;
+
+/// Degree of polynomial used to interpolate velocity
+const VELOCITY_POLYNOMIAL_DEGREE: usize = 4;
+
 type Millis = f64;
 
+/// Represents a single scrollview and tracks all state related to it.
 #[derive(Default)]
 pub struct Scrollview {
     content_height: u64,
@@ -133,6 +141,14 @@ impl AxisVector<f64> {
             self.decaying = false;
         }
     }
+
+    fn scale(&self, scalar: f64) -> AxisVector<f64> {
+        AxisVector {
+            x: self.x * scalar,
+            y: self.y * scalar,
+            ..self.clone()
+        }
+    }
 }
 
 // TODO: consider naming, doing pythagorean add on + may make more sense, with alternative op to
@@ -157,16 +173,30 @@ pub enum Axis {
     Vertical,
 }
 
+/// Pass along with any events to indicate what kind of device the event came from
 #[derive(Copy)]
 #[derive(Clone)]
 pub enum Source {
+    /// Device type is unknown, assume nothing (very suboptimal to actually use this, should only
+    /// be used when device type can not be feasibly deduced, and even then may not be the best
+    /// choice)
     Undefined,
+    /// Device is a touchscreen, hint to avoid acceleration, but perform tracking prediction
     Touchscreen,
+    /// Device is a touchpad, hint to accelerate input, and perform tracking prediction
     Touchpad,
+    /// Device is a mousewheel that reports deltas of around 15 degrees (coarse) and requires
+    /// smoothing and mid-delta animation
     Mousewheel,
+    /// Device is a mousewheel that reports deltas of less than 15 degrees (usually much less,
+    /// indicating that very little/no smoothing needs to be applied)
     PreciseMousewheel,
+    /// Do no manual smoothing or acceleration, assume driver already does this or input method
+    /// would be strange to use with either
     Passthrough,
+    /// Same as passthrough, but input fling events should trigger a kinetic fling animation
     KineticPassthrough,
+    /// The device type last used
     Previous,
 }
 
@@ -304,18 +334,22 @@ impl Scrollview {
         self.current_position.difference(self.prior_position)
     }*/
 
-    pub fn push_pan(&mut self, timestamp: Option<u64>, axis: Axis, amount: f64) {
+    /// Enqueue a pan event for the referenced scrollview
+    pub fn push_pan(&mut self, axis: Axis, amount: f64, timestamp: Option<u64>) {
         match axis {
             Axis::Horizontal => self.pan_log_x.push((timestamp.unwrap_or(self.current_timestamp), amount)),
             Axis::Vertical => self.pan_log_y.push((timestamp.unwrap_or(self.current_timestamp), amount)),
         }
     }
 
-    pub fn push_fling(&mut self) {
+    /// Enqueue a fling (finger lift at any velocity) for the referenced scrollview
+    pub fn push_fling(&mut self, _timestamp: Option<u64>) {
         self.current_velocity.decay_start();
     }
 
-    pub fn push_interrupt(&mut self) {
+    /// Enqueue a scroll interrupt (finger down at any time, gesture start) for the referenced
+    /// scrollview
+    pub fn push_interrupt(&mut self, _timestamp: Option<u64>) {
         self.pan_log_x.clear();
         self.pan_log_y.clear();
         self.current_velocity = AxisVector { x: 0.0, y: 0.0, ..self.current_velocity };
@@ -387,6 +421,18 @@ impl Scrollview {
                 ..self.current_velocity
             }
         }
+    }
+
+    /// Returns the displacement over a range on (x, y) as AxisVector
+    ///
+    /// NOTE: currently a placeholder while polynomial interpolation is added
+    fn integrate(&self, start: f64, end: f64) -> AxisVector<f64> {
+        self.current_velocity.scale(end - start)
+    }
+
+    /// Returns the velocity at a given time as (x, y) as AxisVector
+    fn velocity_at(&self, time: f64) -> AxisVector<f64> {
+        self.current_velocity
     }
 
     // TODO: move to pref
