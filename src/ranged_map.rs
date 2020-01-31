@@ -35,7 +35,13 @@ impl<Key, Val> RangedMap<Key, Val> where Key: Ord, Val: ToKey<Key> + Copy {
     pub fn get_before(&self, point: Key) -> Option<Val> {
         let v = self.iter().rev().find(|&(&k, &v)| { k < point });
 
-        v.map(|(&k, &v)| { v }) // get value if exists as Some(v) else None
+        v.map(|(&k, &v)| v ) // get value if exists as Some(v) else None
+    }
+
+    pub fn get_after(&self, point: Key) -> Option<Val> {
+        let v = self.iter().find(|&(&k, &v)| { k > point });
+
+        v.map(|(&k, &v)| v )
     }
 
     pub fn insert(&mut self, obj: Val) {

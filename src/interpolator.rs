@@ -51,8 +51,25 @@ impl Interpolator {
     }*/
 
     pub fn integrate_over(&self, start_bound: Timestamp, end_bound: Timestamp) {
+        assert!(start_bound < end_bound, "Couldn't integrate over negative interval");
         // Start at end bound, see if neighbors go far enough. If not, find neighbors back
-        let (cand_start, end) = self.events.get_neighbors_to(end_bound);
+        let stride = 1; // how many microseconds between each sample
+        //let (cand_start, end) = self.events.get_neighbors_to(end_bound);
+        let (mut start, mut cand_end) = self.events.get_neighbors_to(start_bound);
+
+        let mut sum = 0.0;
+
+        for num in start_bound..end_bound {
+            if num > cand_end.timestamp {
+                match self.events.get_after(cand_end.timestamp) {
+                    Some(event) => {
+                        start = cand_end;
+                        cand_end = event
+                    },
+                    None => panic!("Next event simulation not implemented"),
+                }
+            }
+        }
     }
 
     pub fn redistribute(&mut self, most_recent: Timestamp, ratio: f64, frametime: TimeDeltaMicros) {
