@@ -10,3 +10,4 @@ description = "Scrollview event handling library"
 
 [dependencies]
 num = "0.2"
+flo_curves = "0.3"

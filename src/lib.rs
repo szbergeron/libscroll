@@ -13,6 +13,10 @@ use std::f64;
 
 mod circular_backqueue;
 
+mod interpolator;
+
+mod ranged_map;
+
 use std::ops;
 
 //#[macro_use]
@@ -69,6 +73,8 @@ pub struct Scrollview {
     interpolation_ratio: f64,
 
     input_per_frame_log: circular_backqueue::ForgetfulLogQueue<u32>,
+
+    timer: Option<Box<dyn FnMut() -> f64>>,
 
     
     // pairing of a (timestamp, magnitude) for pan events
@@ -233,6 +239,10 @@ impl Scrollview {
     ///
     /// NOTE: likely will be removed, not sure why I put this in here to begin with
     pub fn del(_: Scrollview) {}
+
+    pub fn set_clock_callback<F>(&mut self, cb: F) where F: Fn() -> f64, F: Clone {
+        self.timer = Some(Box::new(cb.clone()));
+    }
 
     /// Set the geometry for the given scrollview
     ///
