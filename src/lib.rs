@@ -1,3 +1,6 @@
+#![feature(map_first_last)]
+#![feature(half_open_range_patterns)]
+
 /*!
  * This library serves as an event interpretation library.
  * To use, you will need to take the raw events you recieve
@@ -240,9 +243,9 @@ impl Scrollview {
     /// NOTE: likely will be removed, not sure why I put this in here to begin with
     pub fn del(_: Scrollview) {}
 
-    pub fn set_clock_callback<F>(&mut self, cb: F) where F: Fn() -> f64, F: Clone {
+    /*pub fn set_clock_callback<F>(&mut self, cb: F) where F: Fn() -> f64, F: Clone {
         self.timer = Some(Box::new(cb.clone()));
-    }
+    }*/
 
     /// Set the geometry for the given scrollview
     ///
