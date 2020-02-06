@@ -13,8 +13,14 @@ type TimeDeltaMicros = u64;
 #[derive(Clone, Copy)]
 struct Event {
     timestamp: Timestamp, // microseconds since interpolator init
-    delta: f64, // distance represented by this event
+    //delta: f64, // distance represented by this event
+    value: f64, // the current absolute "position" of the event
     //bezier_forward: Option<bezier::Curve<geo::Coord2>>,
+}
+
+#[derive(Clone, Copy)]
+struct Sample {
+    timestamp: Timestamp,
 }
 
 struct Interpolator {
@@ -28,24 +34,40 @@ struct Interpolator {
     /// reset
     delta: f64,
     events: VecDeque<Event>,
+    samples: VecDeque<Sample>,
+    pan_start_time: Timestamp,
     //events_y: RangedMap<Timestamp, Event>,
 
 }
+
+/*struct EventQueue {
+    events: VecDeque<Event>,
+}*/
+
+/*impl EventQueue {
+    get_before(&self, 
+}*/
+
+/*impl VecDeque<Event> {
+    //
+}*/
 
 impl Interpolator {
     pub fn new(redistributable: bool) -> Interpolator {
         let r = Interpolator {
             redistributable,
-            delta: 0,
-            events: VecDeque::with_capacity(4),
+            delta: 0.0,
+            events: VecDeque::with_capacity(5),
+            samples: VecDeque::new(),
+            pan_start_time: 0,
             //events: RangedMap::new(),
             //samples: vec![],
             //events_y: RangedMap::new(),
         };
 
-        for i in 0..3 {
+        /*for i in 0..3 {
             r.push_back(Event { timestamp: i, delta: 0 });
-        }
+        }*/
 
         return r;
     }
@@ -72,27 +94,29 @@ impl Interpolator {
             0 => 0.0, 
 
             //only have one event, have to assume delta will stay the same 
-            1 => self.events.front().expect("Event queue was somehow emptied right underneath us").delta,
+            1 => self.events.front().expect("Event queue was somehow emptied right underneath us").value,
 
             // TODO: change to open ended range syntax once it stabilizes
             //have enough info to do a linear projection, maybe more for the 3+ case later
             x if x >= 2 => {
                 let latest = self.events.get(0).expect("Unsafe queue modification occurred");
                 let prev = self.events.get(1).expect("Unsafe queue modification occurred");
-                let slope: f64 = (latest.delta - prev.delta) / (latest.timestamp - prev.timestamp) as f64;
+                let slope: f64 = (latest.value - prev.value) / (latest.timestamp - prev.timestamp) as f64;
                 let timedelta = sample - latest.timestamp;
                 
-                let delta = slope * timedelta as f64;
+                let value = slope * timedelta as f64;
 
-                delta + latest.delta
-            }
+                value + latest.value
+            },
+            _ => panic!("Project got len that didn't match 0, 1, or >2")
         }
     }
 
     fn interpolate(&self, sample: Timestamp) -> f64 {
         match self.events.len() {
             0 => panic!("Asked to interpolate on a zero event queue. Is unsafe concurrent modification happening? If not, this function is being misused."),
-            1 => self.events.front().expect("Event queue was somehow emptied right underneath us").delta,
+            //1 => self.events.front().expect("Event queue was somehow emptied right underneath us").delta,
+            1 => panic!("Interpolating with a single event makes no real sense here"),
 
             //only have enough info to do linear interpolation, can avoid doing a bunch of work
             //sampling bezier
@@ -100,12 +124,12 @@ impl Interpolator {
             2 => {
                 let latest = self.events.get(0).expect("Unsafe queue modification occurred");
                 let prev = self.events.get(1).expect("Unsafe queue modification occurred");
-                let slope: f64 = (latest.delta - prev.delta) / (latest.timestamp - prev.timestamp) as f64;
+                let slope: f64 = (latest.value - prev.value) / (latest.timestamp - prev.timestamp) as f64;
                 let timedelta = sample - prev.timestamp;
 
-                let delta = slope * timedelta as f64;
+                let value = slope * timedelta as f64;
 
-                delta + prev.delta
+                value + prev.value
             },
             _ => {
                 let forward = self.events.iter().filter(|event| { event.timestamp >= sample });
@@ -114,8 +138,8 @@ impl Interpolator {
                 if forward.count() < 1 { panic!("NI: can't interpolate if not between points") }
                 if backward.count() < 1 { panic!("NI: can't interpolate if not between points") }
 
-                let forward = self.events.iter().filter(|event| { event.timestamp >= sample });
-                let backward = self.events.iter().rev().filter(|event| { event.timestamp < sample });
+                let mut forward = self.events.iter().filter(|event| { event.timestamp >= sample });
+                let mut backward = self.events.iter().rev().filter(|event| { event.timestamp < sample });
 
                 let forward_point = forward.next().expect("Forward event buffer is empty");
                 let forward_control = match forward.next() {
@@ -147,7 +171,31 @@ impl Interpolator {
         }
     }
 
+    fn sample_linear(first: Event, second: Event, sample: Timestamp) -> f64 {
+        let slope = Self::slope_of(first, second);
+
+        slope * sample as f64 + first.value
+    }
+
+    fn get_x_axis_intercept(first: Event, second: Event) -> Timestamp {
+        let slope = Self::slope_of(first, second);
+
+        //0 = slope(?) + first.delta, (-first.delta) / slope = ? relative to first.timestamp
+
+        ((-first.value) / slope) as Timestamp + first.timestamp
+    }
+
+    fn slope_of(first: Event, second: Event) -> f64 {
+        (first.value - second.value) / (first.timestamp - second.timestamp) as f64
+    }
+
     pub fn add_event(&mut self, /*axis: Axis,*/ timestamp: Timestamp, delta: f64) {
+        let event = Event {
+            timestamp,
+            value: self.events
+                .back()
+                .map_or(0.0, |event| event.value)
+        };
         /*match axis {
             Axis::Vertical => self.events_y.insert(Event { timestamp, delta, bezier_forward: None }),
             Axis::Horizontal => self.events_x.insert(Event { timestamp, delta, bezier_forward: None }),
@@ -162,8 +210,116 @@ impl Interpolator {
 
         let mut error_delta = 0.0;
 
-        let iter = self.events.iter().rev();
-        let second_last_event_timestamp = iter.nth(1).unwrap().timestamp;
+        //let mut iter = self.events.iter().rev();
+        //let second_last_event_timestamp = iter.nth(1).unwrap().timestamp;
+
+        match self.events.len() {
+            //any prior samples used a constant 0 sample, can simply add event
+            0 => {
+                self.start_pan();
+                //self.events.push_back(Event { timestamp, delta });
+                self.events.push_back(event);
+            },
+            //we have a prior sample, we can do linear correction to figure out when the swipe
+            //started, also there are few enough events we can recalculate the delta in full
+            1 => {
+                //self.events.push_back(Event { timestamp, delta });
+
+                let mut new_total_delta = 0.0;
+                /*for sample in self.samples {
+                    new_total_delta += self.interpolate(sample.timestamp);
+                }*/
+
+                //need to find x-axis intercept to find when any samples would have to be later
+                //than to count as part of the scroll
+                let first_event = *self.events.get(1).unwrap();
+                let second_event = *self.events.get(0).unwrap();
+
+                //let sample_since = Self::get_x_axis_intercept(first_event, second_event);
+                let sample_since = self.pan_start_time;
+
+                let samples: Vec<Timestamp> = self.samples
+                    .iter()
+                    .filter(|sample| sample.timestamp >= sample_since)
+                    .map(|sample| sample.timestamp)
+                    .collect();
+
+                for sample in samples {
+                    new_total_delta += Self::sample_linear(first_event, second_event, sample);
+                }
+
+                self.delta = new_total_delta;
+            },
+            //we have enough to do a very basic bezier predict between the
+            //first three by doing linear projection for the fourth point
+            //into the future and past and resampling
+            //
+            //Also still few enough that we can resample all the points and completely refresh the
+            //delta
+            _ /* >=2 */ => {
+                let cur_real_event = *self.events.get(0).unwrap();
+                let prev_real_event = *self.events.get(1).unwrap();
+
+                let prev_prev_event = match self.events .get(2) {
+                    Some(&evt) => evt,
+                    None => {
+                        //let timedelta = cur_real_event.timestamp - prev_real_event.timestamp;
+                        //let slope = Self::slope_of(prev_real_event, cur_real_event);
+                        Event {
+                            timestamp: prev_real_event.timestamp - 1,
+                            value: Self::sample_linear(prev_real_event, cur_real_event, prev_real_event.timestamp - 1),
+                        }
+                    }
+                };
+
+                /*let projected_next_event = Event {
+                    timestamp: cur_real_event.timestamp + 1,
+                    value: Self::sample_linear(prev_real_event, cur_real_event, cur_real_event.timestamp + 1),
+                };*/
+
+                //let projected_curve = Event::project_bezier(prev_prev_event, prev_real_event, cur_real_event, projected_next_event);
+
+                //let first_real_event = *self.events.get(2).unwrap();
+                //let middle_real_event = *self.events.get(1).unwrap();
+                //let last_real_event = *self.events.get(0).unwrap();
+
+                //let sample_since = Self::get_x:axis_intercept(
+
+                let first_timedelta = middle_real_event.timestamp - first_real_event.timestamp;
+                let last_timedelta = last_real_event.timestamp - middle_real_event.timestamp;
+
+                let first_fake_event = Event {
+                    timestamp: first_real_event.timestamp - first_timedelta,
+                    delta: Self::sample_linear(first_real_event, middle_real_event, first_real_event.timestamp - first_timedelta),
+                };
+
+                let last_fake_event = Event {
+                    timestamp: last_real_event.timestamp + last_timedelta,
+                    delta: Self::sample_linear(middle_real_event, last_real_event, last_real_event.timestamp + last_timedelta),
+                };
+
+                let first_to_middle_bezier = Event::project_bezier(first_fake_event, first_real_event, middle_real_event, last_real_event);
+                let middle_to_last_bezier = Event::project_bezier(first_real_event, middle_real_event, last_real_event, last_fake_event);
+
+                let sample_since = self.pan_start_time;
+                let samples: Vec<Timestamp> = self.samples
+                    .iter()
+                    .filter(|sample| sample.timestamp >= sample_since)
+                    .map(|sample| sample.timestamp)
+                    .collect();
+
+                let mut new_total_delta = 0.0;
+                for sample in samples {
+                    if( sample < first_real_event.timestamp ) {
+                        new_total_delta += Self::sample_linear(first_real_event, middle_real_event, sample);
+                    } else if( sample > last_real_event.timestamp ) {
+                        new_total_delta += Self::sample_linear(middle_real_event, last_real_event, sample);
+                    } else if( 
+                }
+            }
+        }
+
+        //let projected_region = 
 
         /*for sample_timestamp in self.samples.iter().rev() {
             if *sample_timestamp < second_last_event_timestamp {
@@ -179,6 +335,18 @@ impl Interpolator {
 
         //self.events.insert(Event { timestamp, delta, bezier_forward: None });
     }
+
+    pub fn end_pan(&mut self) {
+        //self.delta = 0.0;
+        self.events.clear();
+        self.samples.clear();
+    }
+
+    pub fn start_pan(&mut self, starts: Timestamp) {
+        self.delta = 0.0;
+        self.pan_start_time = starts;
+    }
+
 
     /*pub fn sample(timestamp: u64, delta_since: u64) -> AxisVector<f64> {
         //
@@ -269,9 +437,9 @@ impl Event {
         curve
     }
 
-    pub fn accurate_upper_bound(&self) -> Timestamp {
+    /*pub fn accurate_upper_bound(&self) -> Timestamp {
         self.bezier_forward.unwrap().end_point.x() as u64
-    }
+    }*/
 }
 
 impl ToKey<Timestamp> for Event {
