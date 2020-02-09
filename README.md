@@ -14,7 +14,7 @@ Main library interface is implemented in src/lib.rs
 Within event loop:
 
 1. Take any outstanding events from platform driver/provider (SDL, Libinput, Wayland event provider) and use push\_event() to add them to the internal queue.
-2. Loop back to 5
+2. Loop back to 1
 
 Within render loop:
 
