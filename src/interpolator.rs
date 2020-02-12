@@ -7,6 +7,11 @@ use std::collections::VecDeque;
 type Timestamp = u64;
 type TimeDeltaMicros = u64;
 
+type Velocity = f64;
+type Position = f64;
+
+const MILLIS_PER_FRAME_DEFAULT: u64 = 16;
+
 /// This crate only properly handles events that are uniformly redistributable.
 /// Redistributability should only be set during init
 
@@ -21,6 +26,57 @@ struct Event {
 #[derive(Clone, Copy)]
 struct Sample {
     timestamp: Timestamp,
+    velocity: Velocity,
+    position: Position,
+}
+
+enum Animation {
+    //
+}
+
+/// Each phase models whether any transformation should be applied
+/// or considered for any inputs, as well as whether
+/// any subsequent frames, given no input, may differ
+/// from the current one
+enum Phase {
+    Inactive,
+    //Decaying { initial_velocity: f64, at_time: Timestamp },
+    Interpolating,
+    Released,
+    //Bouncing { intercept_velocity: f64, at_time: Timestamp },
+}
+
+struct Decay {
+    initial_velocity: f64, at_time: Timestamp,
+}
+
+struct Bounce {
+    upper_bound: f64,
+    lower_bound: f64,
+}
+
+impl Decay {
+    /*pub fn morph_interpolated_value(input: f64, previous: f64, time: Timestamp) -> f64 {
+        // need to take integral of decay function from start to current time
+        input
+    }*/
+}
+
+impl Bounce {
+    /*pub fn morph_interpolated_value(input: f64, previous: f64, time: Timestamp) -> f64 {
+        //input + (previous - input).powf(0.3)
+        match input.partial_cmp(previous) {
+            Ordering::Greater => /* need to reduce the difference, model "slipping" */ input + (previous - input).powf(0.3),
+            Ordering::Equal => input,
+            Ordering::Less => input,
+        }
+    }*/
+
+    pub fn morph_velocity(velocity: f64, overscrolled_by: f64, delta: Timestamp) -> f64 {
+        0.0
+    }
+
+    //pub fn morph_sample(
 }
 
 struct Interpolator {
@@ -30,12 +86,16 @@ struct Interpolator {
     //events: RangedMap<Timestamp, Event>,
     //samples: Vec<Timestamp>,
     
-    /// Predicted current position relative to the last position when this variable was last
-    /// reset
-    delta: f64,
+    position: f64, // current estimated value as of the most recent sample
     events: VecDeque<Event>,
     samples: VecDeque<Sample>,
     pan_start_time: Timestamp,
+    active_animations: VecDeque<Animation>,
+    current_phase: Phase,
+
+    // upper and lower bounds of the track, used for calculating where bouncing happens
+    track_bound_uppper: f64,
+    track_bound_lower: f64,
     //events_y: RangedMap<Timestamp, Event>,
 
 }
@@ -53,24 +113,188 @@ struct Interpolator {
 }*/
 
 impl Interpolator {
-    pub fn new(redistributable: bool) -> Interpolator {
-        let r = Interpolator {
+    pub fn new(redistributable: bool, position: f64, track_bounds: (f64, f64)) -> Interpolator {
+        Interpolator {
             redistributable,
-            delta: 0.0,
+            position,
             events: VecDeque::with_capacity(5),
             samples: VecDeque::new(),
             pan_start_time: 0,
-            //events: RangedMap::new(),
-            //samples: vec![],
-            //events_y: RangedMap::new(),
-        };
+            active_animations: VecDeque::new(),
+            current_phase: Phase::Inactive,
+            track_bound_lower: track_bounds.0,
+            track_bound_uppper: track_bounds.1,
+        }
+    }
 
-        /*for i in 0..3 {
-            r.push_back(Event { timestamp: i, delta: 0 });
+    /// Returns the best estimate for the value at the given timestamp
+    pub fn sample_position(&mut self, at: Timestamp) -> f64 {
+        match self.current_phase {
+            Inactive => self.delta,
+            Decaying => self.decayed_by(at),
+            Interpolating => 
+                if( at < self.events.front().expect("No events despite being interpolating").timestamp ) {
+                    panic!("Can't interpolate into past, no data exists to do so");
+                } else {
+                    self.sample_interpolate(at)
+                },
+        }
+    }
+
+    /// Get the best estimate of the velocity at the given timestamp,
+    /// given in device pixels per timestamp unit (in this case, one microsecond)
+    pub fn sample_velocity_old(&mut self, at: Timestamp) -> f64 {
+        match self.current_phase {
+            Inactive => 0.0
+        }
+    }
+}
+
+//Private impl
+impl Interpolator {
+    /// May do more in the future, currently just adds the sample to the known list,
+    /// and if there are more samples than we need to do correction it discards some
+    /*fn push_sample(&mut self, at: Timestamp) {
+        self.samples.push_back(Sample { timestamp: at });
+    }*/
+
+    /// Empties the sample and event lists, used for interrupt/fling
+    /// when a group of samples is logically over (a single "gesture")
+    fn flush(&mut self, time: Timestamp) {
+        //self.last_interpolated_velocity = self.interpolate(time);
+        self.events.clear();
+        //self.samples.clear(); need samples to continue animating
+    }
+
+    fn decay(&self, velocity: Velocity, delta: TimeDeltaMicros) -> Velocity {
+        //
+        0.0
+    }
+
+    fn interpolate(&self, time: Timestamp) -> Velocity {
+        match self.events.back() {
+            None => 0.0, // no events yet, can't know if any action has started
+            Some(latest) => {
+                match self.events.get(1) {
+                    None => latest.value * (MILLIS_PER_FRAME_DEFAULT as f64),
+                    Some(second_latest) => {
+                        // do Hermite interpolation later, for now just do linear (only need 2
+                        // points to do properly)
+                        Self::slope_of(*second_latest, *latest)
+                        //match self.events.get(2)
+                    }
+                }
+            }
+        }
+    }
+
+    fn sample_velocity(&mut self, time: Timestamp) -> Velocity {
+        match self.current_phase {
+            Interpolating => self.accelerate(
+                self.handle_overscroll(
+                    self.interpolate(time))),
+
+            Released => {
+                let result = self.bounce(
+                    time - self.previous_sample_timestamp,
+                    self.decay(
+                        time - self.samples.back().map(|evt| evt.timestamp).unwrap_or(time),
+                        self.samples.back().map(|evt| evt.velocity).unwrap_or(0.0),
+                    ));
+
+                if Self::rounds_to_zero(result) {
+                    //self.current_phase = Inactive;
+                    self.set_inactive();
+                }
+
+                result
+            }
+
+            Inactive => 0.0
+        }
+    }
+
+    fn sample(&mut self, timestamp: Timestamp) -> Position {
+        let velocity = self.sample_velocity(timestamp);
+
+        let last_sample = self.samples.back().map(|&evt| evt).unwrap_or(Sample { timestamp, velocity, position: 0.0 });
+
+        //let velocity = 0.0;
+        let delta = (timestamp - last_sample.timestamp) as f64 * velocity;
+
+        let position = last_sample.position + delta;
+
+        // need to integrate velocity since last sample
+        //let position = 0.0;
+
+        self.samples.push_back(Sample { timestamp, velocity, position });
+
+        position
+    }
+
+    fn signal_fling(&mut self, timestamp: Timestamp) {
+        self.current_phase = Phase::Released;
+        self.flush(timestamp);
+    }
+
+    fn signal_interrupt(&mut self, timestamp: Timestamp) {
+        self.current_phase = Phase::Interpolating;
+    }
+
+    fn signal_pan(&mut self, timestamp: Timestamp, delta: f64) {
+        self.current_phase = Phase::Interpolating;
+    }
+
+    fn set_inactive(&mut self) {
+        self.current_phase = Phase::Inactive;
+        self.samples.clear();
+    }
+
+    fn rounds_to_zero(val: f64) -> bool {
+        val.abs() < 0.5
+    }
+
+    fn animating(&self) -> bool {
+        match self.current_phase {
+            Phase::Inactive => false,
+            _ => true,
+        }
+    }
+
+    /*fn bounce(&self, velocity: Velocity) -> Velocity {
+
+        //let initial_velocity = match self.current_phase
+
+        /*match self.current_phase {
+            Interpolating => 
         }*/
 
-        return r;
-    }
+        let spring_constant = 0.12;
+        let view_mass = 50; // TODO: allow config
+
+        // integral((kx)/m)[t1..t2] = v = some potentially horrifically unsolvable thing once we
+        // put it in terms of time
+        //
+        // If we do iterative/numeric eval we get instantaneous acceleration by
+        // kx/m
+
+        if( self.position > self.track_bound_uppper ) {
+            match velocity.cmp(0.0) {
+                Ordering::Greater => velocity - (spring_constant*(self.position - self.track_bound_uppper))/view_mass, /* need to reduce velocity from here */ 
+                Ordering::Equal => velocity,
+                Ordering::Less => 
+            }
+        } else if ( self.position < self.track_bound_lower ) {
+            let overscrolled_amount = self.track_bound_lower - self.position;
+
+            // get upper bound of new velocity with Hooke's law
+        } else {
+            velocity
+        }
+    }*/
+}
+
+impl Interpolator {
 
     fn delta_of(&self, sample: Timestamp) -> f64 {
         let latest_sample = self.events.front();
@@ -112,7 +336,7 @@ impl Interpolator {
         }
     }
 
-    fn interpolate(&self, sample: Timestamp) -> f64 {
+    fn interpolate_old(&self, sample: Timestamp) -> f64 {
         match self.events.len() {
             0 => panic!("Asked to interpolate on a zero event queue. Is unsafe concurrent modification happening? If not, this function is being misused."),
             //1 => self.events.front().expect("Event queue was somehow emptied right underneath us").delta,
@@ -169,6 +393,8 @@ impl Interpolator {
                 0.0
             }*/
         }
+
+        //fn get_starting_velocity
     }
 
     fn sample_linear(first: Event, second: Event, sample: Timestamp) -> f64 {
@@ -189,7 +415,11 @@ impl Interpolator {
         (first.value - second.value) / (first.timestamp - second.timestamp) as f64
     }
 
-    pub fn add_event(&mut self, /*axis: Axis,*/ timestamp: Timestamp, delta: f64) {
+    fn integrate_linear(first: (Timestamp, f64), second: (Timestamp, f64)) -> f64 {
+        0.0
+    }
+
+    /*pub fn add_event(&mut self, /*axis: Axis,*/ timestamp: Timestamp, delta: f64) {
         let event = Event {
             timestamp,
             value: self.events
@@ -334,7 +564,7 @@ impl Interpolator {
         //
 
         //self.events.insert(Event { timestamp, delta, bezier_forward: None });
-    }
+    }*/
 
     pub fn end_pan(&mut self) {
         //self.delta = 0.0;

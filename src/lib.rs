@@ -22,6 +22,8 @@ mod ranged_map;
 
 use std::ops;
 
+type Timestamp = u64;
+
 //#[macro_use]
 //extern crate smart_default;
 
@@ -48,10 +50,10 @@ const SAMPLE_OVER_X_FRAMES: usize = 10;
 
 /// The granularity through which displacement is integrated from the velocity function (sampled
 /// with velocity_at(f64))
-const INTEGRATION_DX: f64 = 0.07;
+//const INTEGRATION_DX: f64 = 0.07;
 
 /// Degree of polynomial used to interpolate velocity
-const VELOCITY_POLYNOMIAL_DEGREE: usize = 4;
+//const VELOCITY_POLYNOMIAL_DEGREE: usize = 4;
 
 type Millis = f64;
 
@@ -101,7 +103,7 @@ pub struct AxisVector<T> where T: num::Num, T: PartialOrd, T: Copy {
 }
 
 impl<T> AxisVector<T> where T: num::Num, T: PartialOrd, T: Copy {
-    fn difference(self, other: AxisVector<T>) -> AxisVector<T> {
+    /*fn difference(self, other: AxisVector<T>) -> AxisVector<T> {
         AxisVector {
             x: self.x - other.x,
             y: self.y - other.y,
@@ -128,7 +130,7 @@ impl<T> AxisVector<T> where T: num::Num, T: PartialOrd, T: Copy {
             Axis::Horizontal => self.x = magnitude + self.x,
             Axis::Vertical => self.y = magnitude + self.y,
         }
-    }
+    }*/
 }
 
 impl AxisVector<f64> {
@@ -151,7 +153,7 @@ impl AxisVector<f64> {
         }
     }
 
-    fn scale(&self, scalar: f64) -> AxisVector<f64> {
+    pub fn scale(&self, scalar: f64) -> AxisVector<f64> {
         AxisVector {
             x: self.x * scalar,
             y: self.y * scalar,
@@ -222,6 +224,11 @@ impl Default for Source {
 
 // pub interface
 impl Scrollview {
+    /// Gives the current best estimate for the position of the content relative to
+    /// the viewport in device pixels
+    pub fn sample(&mut self, timestamp: Timestamp) -> AxisVector<f64> {
+        panic!("NI");
+    }
     /// Create a new scrollview with default settings
     ///
     /// Warning: these settings are unlikely to be
@@ -291,7 +298,7 @@ impl Scrollview {
     ///
     /// After any event, continue to call this on every
     /// page-flip (new frame) until animating() returns false
-    pub fn step_frame(&mut self, timestamp: Option<u64>) {
+    /*pub fn step_frame(&mut self, timestamp: Option<u64>) {
         self.interpolation_ratio = self.input_per_frame_log.all().iter().sum::<u32>() as f64 / self.input_per_frame_log.size() as f64;
 
         self.current_timestamp = timestamp.unwrap_or(1);
@@ -306,7 +313,7 @@ impl Scrollview {
         self.current_position.y += Self::accelerate(self.current_velocity.y, self.current_source) * self.interpolation_ratio * self.frametime;
 
         self.input_per_frame_log.push(0); // add new frame for events to pile into
-    }
+    }*/
     
     /// Should be called at scrollview initialization time.
     /// Will internally flush any active events or animations,
