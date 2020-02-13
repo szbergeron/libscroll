@@ -96,6 +96,7 @@ struct Interpolator {
     // upper and lower bounds of the track, used for calculating where bouncing happens
     track_bound_uppper: f64,
     track_bound_lower: f64,
+    track_initial_pos: f64,
     //events_y: RangedMap<Timestamp, Event>,
 
 }
@@ -113,7 +114,7 @@ struct Interpolator {
 }*/
 
 impl Interpolator {
-    pub fn new(redistributable: bool, position: f64, track_bounds: (f64, f64)) -> Interpolator {
+    pub fn new(redistributable: bool, position: f64, track_bounds: (f64, f64), initial_position: f64) -> Interpolator {
         Interpolator {
             redistributable,
             position,
@@ -124,6 +125,7 @@ impl Interpolator {
             current_phase: Phase::Inactive,
             track_bound_lower: track_bounds.0,
             track_bound_uppper: track_bounds.1,
+            track_initial_pos: initial_position,
         }
     }
 
@@ -166,11 +168,6 @@ impl Interpolator {
         //self.samples.clear(); need samples to continue animating
     }
 
-    fn decay(&self, velocity: Velocity, delta: TimeDeltaMicros) -> Velocity {
-        //
-        0.0
-    }
-
     fn interpolate(&self, time: Timestamp) -> Velocity {
         match self.events.back() {
             None => 0.0, // no events yet, can't know if any action has started
@@ -188,6 +185,22 @@ impl Interpolator {
         }
     }
 
+    fn handle_overscroll(&self, velocity: Velocity) -> Velocity {
+        velocity
+    }
+
+    fn accelerate(&self, velocity: Velocity) -> Velocity {
+        velocity.powf(1.4)
+    }
+
+    fn decay(&self, timedelta: TimeDeltaMicros, velocity: Velocity) -> Velocity {
+        velocity
+    }
+
+    fn bounce(&self, timedelta: TimeDeltaMicros, velocity: Velocity) -> Velocity {
+        velocity
+    }
+
     fn sample_velocity(&mut self, time: Timestamp) -> Velocity {
         match self.current_phase {
             Interpolating => self.accelerate(
@@ -196,7 +209,7 @@ impl Interpolator {
 
             Released => {
                 let result = self.bounce(
-                    time - self.previous_sample_timestamp,
+                    time - self.samples.back().map(|evt| evt.timestamp).unwrap_or(time),
                     self.decay(
                         time - self.samples.back().map(|evt| evt.timestamp).unwrap_or(time),
                         self.samples.back().map(|evt| evt.velocity).unwrap_or(0.0),
@@ -243,6 +256,12 @@ impl Interpolator {
 
     fn signal_pan(&mut self, timestamp: Timestamp, delta: f64) {
         self.current_phase = Phase::Interpolating;
+
+        let previous_val = self.events.back().map(|evt| evt.value).unwrap_or(self.track_initial_pos);
+
+        let current_val = previous_val + delta;
+
+        self.events.push_back(Event { value: current_val, timestamp });
     }
 
     fn set_inactive(&mut self) {
