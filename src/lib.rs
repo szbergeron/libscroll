@@ -30,33 +30,33 @@ type Timestamp = u64;
 
 // configs
 
-/// Determines how much "smoothing" happens, at a direct cost to responsiveness to an action
-/// A large number means more past events will be counted in the current velocity,
-/// which avoids skipping over or being "hitched" by anomalies, but also means
-/// that changes to velocity after the initial touch are responded to slower
-const MAX_EVENTS_CONSIDERED: u32 = 5;
+//// Determines how much "smoothing" happens, at a direct cost to responsiveness to an action
+//// A large number means more past events will be counted in the current velocity,
+//// which avoids skipping over or being "hitched" by anomalies, but also means
+//// that changes to velocity after the initial touch are responded to slower
+//const MAX_EVENTS_CONSIDERED: u32 = 5;
 
-/// Determines whether the prior config (MAX_EVENTS_CONSIDERED) is used.
-/// If false, no smoothing occurs and the velocity is simply the most recent event
-/// Equivalent to setting MAX_EVENTS_CONSIDERED to 1, but allows a performance shortcut
-const ENABLE_VELOCITY_SMOOTHING: bool = true;
+//// Determines whether the prior config (MAX_EVENTS_CONSIDERED) is used.
+//// If false, no smoothing occurs and the velocity is simply the most recent event
+//// Equivalent to setting MAX_EVENTS_CONSIDERED to 1, but allows a performance shortcut
+//const ENABLE_VELOCITY_SMOOTHING: bool = true;
 
-const FLING_FRICTION_FACTOR: f64 = 0.998;
+//const FLING_FRICTION_FACTOR: f64 = 0.998;
 
-const PAN_ACCELERATION_FACTOR_TOUCHPAD: f64 = 1.34;
+//const PAN_ACCELERATION_FACTOR_TOUCHPAD: f64 = 1.34;
 
-/// Used to specify over what window (in number of frames) the ratio of input events to frames
-/// should be derived. The ratio is then used to interpolate/extrapolate input events
+//// Used to specify over what window (in number of frames) the ratio of input events to frames
+//// should be derived. The ratio is then used to interpolate/extrapolate input events
 const SAMPLE_OVER_X_FRAMES: usize = 10;
 
-/// The granularity through which displacement is integrated from the velocity function (sampled
-/// with velocity_at(f64))
+//// The granularity through which displacement is integrated from the velocity function (sampled
+//// with velocity_at(f64))
 //const INTEGRATION_DX: f64 = 0.07;
 
-/// Degree of polynomial used to interpolate velocity
+//// Degree of polynomial used to interpolate velocity
 //const VELOCITY_POLYNOMIAL_DEGREE: usize = 4;
 
-type Millis = f64;
+//type Millis = f64;
 
 /// Represents a single scrollview and tracks all state related to it.
 //#[derive(Default)]
@@ -68,12 +68,12 @@ pub struct Scrollview {
 
     current_source: Source,
 
-    frametime: Millis,
-    time_to_pageflip: Millis,
+    //frametime: Millis,
+    //time_to_pageflip: Millis,
 
-    current_timestamp: u64,
+    //current_timestamp: u64,
 
-    interpolation_ratio: f64,
+    //interpolation_ratio: f64,
 
     input_per_frame_log: circular_backqueue::ForgetfulLogQueue<u32>,
 
@@ -214,10 +214,10 @@ impl Scrollview {
             viewport_height: 0,
             viewport_width: 0,
             current_source: Source::Undefined,
-            frametime: 0.0,
-            time_to_pageflip: 0.0,
-            current_timestamp: 0,
-            interpolation_ratio: 0.0,
+            //frametime: 0.0,
+            //time_to_pageflip: 0.0,
+            //current_timestamp: 0,
+            //interpolation_ratio: 0.0,
             x: Interpolator::new(false, (0.0, 0.0), 0.0),
             y: Interpolator::new(false, (0.0, 0.0), 0.0),
         }
@@ -250,22 +250,6 @@ impl Scrollview {
         self.x.set_geometry(0.0, (content_width - viewport_width) as f64);
         self.x.set_geometry(0.0, (content_height - viewport_height) as f64);
     }
-
-    /// Add an event to the queue to be processed for the next call to
-    /// step_frame()
-    /// NOTE: doesn't simplify usage much and hurts ffi interop, so currently exposing the
-    /// individual push_... functions instead (impl complexity is similar/same between both
-    /// methods)
-    /*pub fn push_event(
-        &mut self,
-        event: &Event
-    ) {
-        match event {
-            Event::Pan { timestamp, axis, amount } => self.push_pan(*timestamp, *axis, *amount),
-            Event::Fling {..} => self.push_fling(),
-            Event::Interrupt {..} => self.push_interrupt(),
-        }
-    }*/
 
     /// True if scrollview should continue to be polled
     /// even in absence of events (fling or other 
