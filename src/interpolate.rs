@@ -39,6 +39,12 @@ const OVERSCROLL_SPRING_CONSTANT: f64 = 0.4;
 
 const BOUNCE_DAMP_FACTOR: f64 = 0.9974;
 
+const MAX_MS_WITHOUT_ZERO_INJECTION: f64 = 150.0;
+
+const MULTIPLY_FIRST_EVENT: f64 = 500.0;
+
+const FIRST_EVENT_SLOPE: f64 = -0.8;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Phase {
     Inactive,
@@ -129,11 +135,17 @@ pub struct Interpolator {
 
     last_value: f64,
     flips_same_value: u64,
+    source: crate::Source,
     //events_y: RangedMap<Timestamp, Event>,
 
 }
 
 impl Interpolator {
+    pub fn set_source(&mut self, source: crate::Source) {
+        println!("Sets source to {:?}", source);
+        self.source = source;
+    }
+
     pub fn print_events(&self) {
         return;
 
@@ -156,6 +168,7 @@ impl Interpolator {
             flips_same_value: 0,
             last_value: 0.0,
             bouncing: BounceState::Normal,
+            source: crate::Source::Undefined,
         }
     }
 
@@ -224,11 +237,13 @@ impl Interpolator {
         }*/
         //println!("Samples at {}, gets ({}, {})", time, cur_position, cur_velocity);
 
-        if self.events.len() >= 2 {
-            cur_position
+        /*if self.events.len() >= 2 {
+            //cur_position
         } else {
-            cur_position + self.short_circuit_single_event()
-        }
+            //cur_position + self.short_circuit_single_event()
+        }*/
+
+        cur_position
     }
 
     pub fn cull(&mut self) {
@@ -358,10 +373,10 @@ impl Interpolator {
                 _ => {
                     let evt = self.events.back().expect("Events was empty despite len > 0");
                     let delta = (time - evt.time).abs();
-                    if delta > self.min_tick_period * TICKS_TO_COAST {
+                    if delta > self.min_tick_period * TICKS_TO_COAST || delta > MAX_MS_WITHOUT_ZERO_INJECTION {
                         // inject event
-                        println!("\n\n\n\n\nCLAMPs velocity to prevent coast");
-                        println!("delta {} evt {} min_tick_period {}", delta, evt, self.min_tick_period);
+                        //println!("\n\n\n\n\nCLAMPs velocity to prevent coast");
+                        println!("Clamps to prevent coast. Delta {} evt {} min_tick_period {}", delta, evt, self.min_tick_period);
                         //self.current_phase = Phase::Inactive;
                         self.signal_interrupt(time);
                     }
@@ -420,7 +435,10 @@ impl Interpolator {
             },
             1 => {
                 println!("Interpolate returns 0, as can't get slope of single event");
-                0.0
+                let evt = events.first().expect("no elements in size 1 vec");
+                //evt.value * MULTIPLY_FIRST_EVENT / (time - evt.time + 1.0)
+                //FIRST_EVENT_SLOPE * (time - evt.time) + evt.value
+                evt.value / MAX_MS_WITHOUT_ZERO_INJECTION
             }
             //1 => Self::interpolate_constant(&events, time),
             2 => Self::interpolate_linear(&events, time),
@@ -497,27 +515,37 @@ impl Interpolator {
     fn handle_overscroll(&self, start: Time, end: Time, position: Position, velocity: Velocity) -> Velocity {
         if self.outside_bounds(position) {
             //velocity.abs().powf(0.6).copysign(velocity)
-            let outside_by = if position > self.track_bound_upper {
-                position - self.track_bound_upper
+            if self.source.overscrolls() {
+                let outside_by = if position > self.track_bound_upper {
+                    position - self.track_bound_upper
+                } else {
+                    self.track_bound_lower - position
+                };
+
+                let abs_vel = velocity.abs();
+                let timedelta = end - start;
+                let r_velocity = velocity * (1.0 / (outside_by * OVERSCROLL_ELASTICITY_COEFFICIENT));
+
+                /*if reduction_amount < 0.0 {
+                    panic!("Reduction amount negative");
+                } else if reduction_amount > abs_vel {
+                    panic!("Overscroll accelerated velocity");
+                }*/
+
+                //(abs_vel - reduction_amount).copysign(velocity)
+                if r_velocity.is_nan() {
+                    panic!("handle_overscroll tried to return NaN");
+                }
+                r_velocity
             } else {
-                self.track_bound_lower - position
-            };
-
-            let abs_vel = velocity.abs();
-            let timedelta = end - start;
-            let r_velocity = velocity * (1.0 / (outside_by * OVERSCROLL_ELASTICITY_COEFFICIENT));
-
-            /*if reduction_amount < 0.0 {
-                panic!("Reduction amount negative");
-            } else if reduction_amount > abs_vel {
-                panic!("Overscroll accelerated velocity");
-            }*/
-
-            //(abs_vel - reduction_amount).copysign(velocity)
-            if r_velocity.is_nan() {
-                panic!("handle_overscroll tried to return NaN");
+                if velocity < 0.0 && position < self.track_bound_upper {
+                    0.0
+                } else if velocity > 0.0 && position > self.track_bound_lower {
+                    0.0
+                } else {
+                    velocity
+                }
             }
-            r_velocity
         } else {
             velocity
         }
@@ -525,7 +553,11 @@ impl Interpolator {
 
     fn accelerate(&self, velocity: Velocity) -> Velocity {
         //velocity
-        velocity.abs().powf(1.4).copysign(velocity)
+        if self.source.accelerates() {
+            velocity.abs().powf(1.4).copysign(velocity)
+        } else {
+            velocity
+        }
     }
 
     fn pre_scale(&self, velocity: Velocity) -> Velocity {

@@ -203,6 +203,32 @@ pub enum Source {
     Previous,
 }
 
+impl Source {
+    fn overscrolls(&self) -> bool {
+        let r = match self {
+            Self::Touchscreen => true,
+            Self::Touchpad => true,
+            _ => false,
+        };
+        //println!("Overscroll returns {}", r);
+        r
+    }
+
+    fn kinetic(&self) -> bool {
+        match self {
+            Self::Touchpad | Self::Touchscreen | Self::KineticPassthrough => true,
+            _ => false,
+        }
+    }
+
+    fn accelerates(&self) -> bool {
+        match self {
+            Self::Touchpad => true,
+            _ => false,
+        }
+    }
+}
+
 impl Default for Source {
     fn default() -> Self { Source::Undefined }
 }
@@ -340,5 +366,7 @@ impl Scrollview {
     /// is declared
     pub fn set_source(&mut self, source: Source) {
         self.current_source = source;
+        self.x.set_source(source);
+        self.y.set_source(source);
     }
 }
