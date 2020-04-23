@@ -283,7 +283,7 @@ impl Scrollview {
     /// even in absence of events (fling or other 
     /// animation in progress)
     pub fn animating(&self) -> bool {
-        println!("Animating called to check in");
+        //println!("Animating called to check in");
 
         /*let mut file = File::open("/home/sawyer/ctl1.txt").unwrap();
         let mut contents = String::new();

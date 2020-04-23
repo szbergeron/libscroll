@@ -13,6 +13,8 @@ const MILLIS_PER_FRAME_DEFAULT: u64 = 16;
 //const TIMESTEP_MILLIS: f64 = 0.1;
 const TIMESTEP: f64 = 0.1;
 
+const MIN_VELOCITY_TO_IDLE: f64 = 0.002;
+
 const EVENT_EXPIRY_COUNT: usize = 20;
 const SAMPLE_EXPIRY_COUNT: usize = 20;
 
@@ -27,6 +29,16 @@ const SHIFT_WINDOW_MS: f64 = 0.0;
 
 const COAST_MIN_VELOCITY: f64 = 0.01;
 
+const BOUNCE_REDUCTION_EXPONENT: f64 = 1.5;
+const BOUNCE_REDUCTION_COEFFICIENT: f64 = 1.0;
+
+const OVERSCROLL_ELASTICITY_COEFFICIENT: f64 = 1.0;
+
+const CONTENT_MASS_VALUE: f64 = 6000.0;
+const OVERSCROLL_SPRING_CONSTANT: f64 = 0.4;
+
+const BOUNCE_DAMP_FACTOR: f64 = 0.9974;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Phase {
     Inactive,
@@ -34,8 +46,13 @@ enum Phase {
     Released(Time), // the velocity and time the release was done at
 }
 
+enum TrackPosition {
+    Top,
+    Bottom,
+}
+
 enum BounceState {
-    Bouncing,
+    Bouncing(TrackPosition),
     Normal,
 }
 
@@ -199,12 +216,13 @@ impl Interpolator {
         //self.check_idle(position);
 
         self.cull();
-        self.check_idle(cur_position);
+        //self.check_idle(cur_position);
+        self.check_idle(cur_position, cur_velocity);
 
         /*if position.is_nan() {
             panic!("Was going to return NaN position");
         }*/
-        println!("Samples at {}, gets ({}, {})", time, cur_position, cur_velocity);
+        //println!("Samples at {}, gets ({}, {})", time, cur_position, cur_velocity);
 
         if self.events.len() >= 2 {
             cur_position
@@ -284,7 +302,7 @@ impl Interpolator {
             _ => true,
         };
 
-        println!("Says animating is {}", r);
+        //println!("Says animating is {}", r);
 
         r
     }
@@ -304,20 +322,34 @@ impl Interpolator {
         //self.samples.clear(); need samples to continue animating
     }
 
-    fn check_idle(&mut self, position: f64) {
-        if position == self.last_value {
-            self.flips_same_value += 1;
-        } else {
-            self.flips_same_value = 0;
-        }
-        self.last_value = position;
+    fn check_idle(&mut self, position: Position, velocity: Velocity) {
+        match self.current_phase {
+            Phase::Released(_) => {
+                if position == self.last_value || velocity.abs() < MIN_VELOCITY_TO_IDLE {
+                    self.flips_same_value += 1;
+                } else {
+                    self.flips_same_value = 0;
+                }
+                self.last_value = position;
 
-        if self.flips_same_value > FLIPS_TO_IDLE {
-            eprintln!("Goes to idle");
-            println!("check_idle goes to Inactive");
-            self.current_phase = Phase::Inactive;
+                if self.flips_same_value > FLIPS_TO_IDLE {
+                    eprintln!("Goes to idle");
+                    println!("check_idle goes to Inactive");
+                    self.current_phase = Phase::Inactive;
+                }
+            },
+            Phase::Interpolating => {
+                self.flips_same_value = 0;
+            },
+            Phase::Inactive => {}
         }
     }
+    /*fn check_idle(&mut self, velocity: Velocity) {
+        if velocity < MIN_VELOCITY_TO_IDLE {
+            println!("Libscroll idles with velocity {}", velocity);
+            self.current_phase = Phase::Inactive;
+        }
+    }*/
 
     fn prevent_coast(&mut self, time: Time) {
         match self.current_phase {
@@ -464,7 +496,28 @@ impl Interpolator {
 
     fn handle_overscroll(&self, start: Time, end: Time, position: Position, velocity: Velocity) -> Velocity {
         if self.outside_bounds(position) {
-            velocity.abs().powf(0.6).copysign(velocity)
+            //velocity.abs().powf(0.6).copysign(velocity)
+            let outside_by = if position > self.track_bound_upper {
+                position - self.track_bound_upper
+            } else {
+                self.track_bound_lower - position
+            };
+
+            let abs_vel = velocity.abs();
+            let timedelta = end - start;
+            let r_velocity = velocity * (1.0 / (outside_by * OVERSCROLL_ELASTICITY_COEFFICIENT));
+
+            /*if reduction_amount < 0.0 {
+                panic!("Reduction amount negative");
+            } else if reduction_amount > abs_vel {
+                panic!("Overscroll accelerated velocity");
+            }*/
+
+            //(abs_vel - reduction_amount).copysign(velocity)
+            if r_velocity.is_nan() {
+                panic!("handle_overscroll tried to return NaN");
+            }
+            r_velocity
         } else {
             velocity
         }
@@ -484,6 +537,14 @@ impl Interpolator {
     }
 
     fn decay(&self, start: Time, end: Time, _position: Position, old_velocity: Velocity) -> Velocity {
+        if old_velocity.is_nan() {
+            panic!("given NaN velocity");
+        }
+
+        if old_velocity == 0.0 {
+            return 0.0;
+        }
+
         let timedelta = end - start;
         //println!("DECAY: {}, {}", timedelta, old_velocity);
         let abs_vel = old_velocity.abs();
@@ -514,6 +575,10 @@ impl Interpolator {
             panic!("Somehow accelerated");
         }
 
+        if floored.is_nan() {
+            panic!("tried to return NaN velocity. Given {}", old_velocity);
+        }
+
         floored
         //0.0
 
@@ -537,15 +602,65 @@ impl Interpolator {
         }*/
     }
 
-    fn bounce(&self, start: Time, end: Time, position: Position, old_velocity: Velocity) -> Velocity {
-        if position > self.track_bound_upper {
-        } else if position < self.track_bound_lower {
+    fn bounce(&mut self, start: Time, end: Time, position: Position, old_velocity: Velocity) -> Velocity {
+        if self.outside_bounds(position) {
+            let trackposition = if position > self.track_bound_upper {
+                TrackPosition::Bottom
+            } else {
+                TrackPosition::Top
+            };
+
+            self.bouncing = BounceState::Bouncing(trackposition);
         }
 
-        match self.bouncing {
+        match &self.bouncing {
             BounceState::Normal => old_velocity,
-            BounceState::Bouncing => {
-                old_velocity // just for push
+            BounceState::Bouncing(trackposition) => {
+                if old_velocity.is_nan() {
+                    panic!("Given NaN velocity");
+                }
+
+                let displacement = match trackposition {
+                    TrackPosition::Top => position - self.track_bound_lower,
+                    TrackPosition::Bottom => position - self.track_bound_upper,
+                };
+
+                let force = -displacement * OVERSCROLL_SPRING_CONSTANT;
+                let timedelta = end - start;
+                let acceleration = force / CONTENT_MASS_VALUE;
+                let velocity = old_velocity + acceleration * timedelta;
+
+                let velocity = velocity * BOUNCE_DAMP_FACTOR;
+
+                /*let abs_vel = old_velocity.abs(); // just for push
+                let timedelta = end - start;
+                let reduction_amount = match abs_vel {
+                    zero if zero == 0.0 => 0.0,
+                    other => (other.powf(BOUNCE_REDUCTION_EXPONENT) / other) * BOUNCE_REDUCTION_COEFFICIENT * timedelta,
+                };
+
+                if reduction_amount < 0.0 {
+                    panic!("Reduction amount negative");
+                } /*else if reduction_amount > abs_vel {
+                    panic!("*/
+
+                println!("Reduces {} by {}", abs_vel, reduction_amount);*/
+                if acceleration < 0.0 {
+                    //println!("accel negative");
+                } else {
+                    //println!("accel positive");
+                }
+
+                //if old_velocity.copysign(acceleration) == 
+                //println!("Velocity was {}, given {} {}. Found {} {} {} {}", velocity, old_velocity, position, displacement, force, timedelta, acceleration);
+                if velocity.is_nan() {
+                    panic!("Velocity was NaN");
+                } else if velocity.is_infinite() {
+                    panic!();
+                }
+
+                //(abs_vel - reduction_amount).copysign(old_velocity)
+                velocity
             }
         }
     }
@@ -570,25 +685,27 @@ impl Interpolator {
                 r
             },
             Phase::Released(release_time) if release_time < start => {
-                let r = self.bounce(
+                let b = self.bounce(
                     start,
                     end,
                     position,
-                    self.decay(
-                        start,
-                        end,
-                        position,
-                        old_velocity));
+                    old_velocity);
+                let r = self.decay(
+                    start,
+                    end,
+                    position,
+                    b);
 
-                if r.abs() > old_velocity.abs() {
+                /*if r.abs() > old_velocity.abs() {
                     panic!("Velocity increased during release");
-                }
+                }*/
 
                 r
             },
             Phase::Interpolating | Phase::Released(_) => {
                 // short circuit velocity measurement, velocity is just the accelerated
                 // interpolation velocity
+                self.bouncing = BounceState::Normal;
                 let r = self.post_scale(
                             self.handle_overscroll(
                                 start,
