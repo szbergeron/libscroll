@@ -25,6 +25,9 @@ use interpolate::Interpolator;
 
 type Timestamp = u64;
 
+use std::fs::File;
+use std::io::prelude::*;
+
 //#[macro_use]
 //extern crate smart_default;
 
@@ -49,6 +52,10 @@ type Timestamp = u64;
 //// should be derived. The ratio is then used to interpolate/extrapolate input events
 const SAMPLE_OVER_X_FRAMES: usize = 10;
 
+const DEBUG: bool = false;
+
+const VALUE_MULTIPLIER: f64 = 6.0;
+
 //// The granularity through which displacement is integrated from the velocity function (sampled
 //// with velocity_at(f64))
 //const INTEGRATION_DX: f64 = 0.07;
@@ -61,12 +68,15 @@ const SAMPLE_OVER_X_FRAMES: usize = 10;
 /// Represents a single scrollview and tracks all state related to it.
 //#[derive(Default)]
 pub struct Scrollview {
-    content_height: u64,
-    content_width: u64,
-    viewport_height: u64,
-    viewport_width: u64,
+    content_height: f64,
+    content_width: f64,
+    viewport_height: f64,
+    viewport_width: f64,
 
     current_source: Source,
+
+    dbg_amt_x: f64,
+    dbg_amt_y: f64,
 
     //frametime: Millis,
     //time_to_pageflip: Millis,
@@ -152,16 +162,23 @@ impl<T> ops::Add<AxisVector<T>> for AxisVector<T> where T: num::Num, T: PartialO
     }
 }
 
-#[derive(Copy)]
-#[derive(Clone)]
+impl<T> std::fmt::Display for AxisVector<T>
+    where T: std::fmt::Display, T: num::Num, T: PartialOrd, T: Copy
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.x, self.y)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum Axis {
     Horizontal,
     Vertical,
 }
 
 /// Pass along with any events to indicate what kind of device the event came from
-#[derive(Copy)]
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
+//#[derive(Clone)]
 pub enum Source {
     /// Device type is unknown, assume nothing (very suboptimal to actually use this, should only
     /// be used when device type can not be feasibly deduced, and even then may not be the best
@@ -195,10 +212,19 @@ impl Scrollview {
     /// Gives the current best estimate for the position of the content relative to
     /// the viewport in device pixels
     pub fn sample(&mut self, timestamp: Timestamp) -> AxisVector<f64> {
-        AxisVector {
-            x: self.x.sample(timestamp),
-            y: self.y.sample(timestamp),
-            ..Default::default()
+        if !DEBUG {
+            AxisVector {
+                //x: self.x.sample(timestamp as f64) * VALUE_MULTIPLIER,
+                x: 0.0,
+                y: self.y.sample(timestamp as f64),
+                ..Default::default()
+            }
+        } else {
+            AxisVector {
+                x: self.dbg_amt_x,
+                y: self.dbg_amt_y,
+                ..Default::default()
+            }
         }
     }
     /// Create a new scrollview with default settings
@@ -209,11 +235,13 @@ impl Scrollview {
     pub fn new() -> Scrollview {
         Scrollview {
             input_per_frame_log: circular_backqueue::ForgetfulLogQueue::new(SAMPLE_OVER_X_FRAMES),
-            content_height: 0,
-            content_width: 0,
-            viewport_height: 0,
-            viewport_width: 0,
+            content_height: 0.0,
+            content_width: 0.0,
+            viewport_height: 0.0,
+            viewport_width: 0.0,
             current_source: Source::Undefined,
+            dbg_amt_y: 0.0,
+            dbg_amt_x: 0.0,
             //frametime: 0.0,
             //time_to_pageflip: 0.0,
             //current_timestamp: 0,
@@ -237,10 +265,10 @@ impl Scrollview {
     /// Can be used both on scrollview initialization and on scrollview resize
     pub fn set_geometry(
         &mut self,
-        content_height: u64,
-        content_width: u64,
-        viewport_height: u64,
-        viewport_width: u64,
+        content_height: f64,
+        content_width: f64,
+        viewport_height: f64,
+        viewport_width: f64,
     ) {
         self.content_height = content_height;
         self.content_width = content_width;
@@ -248,30 +276,54 @@ impl Scrollview {
         self.viewport_width = viewport_width;
 
         self.x.set_geometry(0.0, (content_width - viewport_width) as f64);
-        self.x.set_geometry(0.0, (content_height - viewport_height) as f64);
+        self.y.set_geometry(0.0, (content_height - viewport_height) as f64);
     }
 
     /// True if scrollview should continue to be polled
     /// even in absence of events (fling or other 
     /// animation in progress)
     pub fn animating(&self) -> bool {
+        println!("Animating called to check in");
+
+        /*let mut file = File::open("/home/sawyer/ctl1.txt").unwrap();
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();*/
+        //println!("contents are {}", contents);
+        //let b: f64 = contents.parse().unwrap();
+        //println!("interprets {}", b);
+
+        //return b != 0.0;
+        //return contents.len() > 0;
+        //
         //self.current_velocity.decay_active()
         self.x.animating() || self.y.animating()
+
+        //true
     }
 
     /// Enqueue a pan event for the referenced scrollview
     pub fn push_pan(&mut self, axis: Axis, amount: f64, timestamp: Option<u64>) {
-        match axis {
-            Axis::Horizontal => self.x.signal_pan(timestamp.unwrap(), amount),
-            Axis::Vertical => self.y.signal_pan(timestamp.unwrap(), amount),
+        println!("push_pan with {:?}, {}, {}", axis, amount, timestamp.unwrap());
+        if !DEBUG {
+            match axis {
+                Axis::Horizontal => {},
+                //Axis::Horizontal => self.x.signal_pan(timestamp.unwrap() as f64, amount),
+                Axis::Vertical => self.y.signal_pan(timestamp.unwrap() as f64, amount),
+            }
+        } else {
+            match axis {
+                Axis::Horizontal => self.dbg_amt_x += amount,
+                Axis::Vertical => self.dbg_amt_y += amount,
+            }
         }
     }
 
     /// Enqueue a fling (finger lift at any velocity) for the referenced scrollview
     pub fn push_fling(&mut self, timestamp: Option<u64>) {
+        println!("push_fling with {}", timestamp.unwrap());
         //self.current_velocity.decay_start();
-        self.x.signal_fling(timestamp.unwrap());
-        self.y.signal_fling(timestamp.unwrap());
+        //self.x.signal_fling(timestamp.unwrap() as f64);
+        self.y.signal_fling(timestamp.unwrap() as f64);
     }
 
     /// Enqueue a scroll interrupt (finger down at any time, gesture start) for the referenced
@@ -280,8 +332,8 @@ impl Scrollview {
         //self.pan_log_x.clear();
         //self.pan_log_y.clear();
         //self.current_velocity = AxisVector { x: 0.0, y: 0.0, ..self.current_velocity };
-        self.x.signal_interrupt(timestamp.unwrap());
-        self.y.signal_interrupt(timestamp.unwrap());
+        //self.x.signal_interrupt(timestamp.unwrap());
+        self.y.signal_interrupt(timestamp.unwrap() as f64);
     }
 
     /// Set what device type is going to be providing any events that follow until the next source
