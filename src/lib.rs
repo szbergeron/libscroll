@@ -471,6 +471,7 @@ impl Scrollview {
             config.get("config", "bounce_damping_factor").map(|v: f64| { config_struct.BOUNCE_DAMP_FACTOR = v});
             config.get("config", "zero_delta_injection_wait_ms").map(|v: f64| { config_struct.MAX_MS_WITHOUT_ZERO_INJECTION = v});
             config.get("config", "first_event_multiplier").map(|v: f64| { config_struct.MULTIPLY_FIRST_EVENT = v});
+            config.get("config", "accel_decel_descriminant").map(|v: f64| { config_struct.ACCEL_DECEL_DESCRIMINANT = v});
 
             config.get("config", "flips_until_idle").map(|v: u64| { config_struct.FLIPS_TO_IDLE = v});
         }).map_err(|_| {
