@@ -56,6 +56,7 @@ pub struct Config {
 	pub BOUNCE_DAMP_FACTOR: f64,
 	pub MAX_MS_WITHOUT_ZERO_INJECTION: f64,
 	pub MULTIPLY_FIRST_EVENT: f64,
+    pub ACCEL_DECEL_DESCRIMINANT: f64,
 
 	pub FLIPS_TO_IDLE: u64,
 }
@@ -75,7 +76,7 @@ impl Default for Config {
             FLIPS_TO_IDLE: 20,
 
             POST_ACCEL_SCALE_VELOCITY: 19.0,
-            PRE_ACCEL_SCALE_VELOCITY: 10.0,
+            PRE_ACCEL_SCALE_VELOCITY: 1.0,
 
             SHIFT_WINDOW_MS: 0.0,
 
@@ -89,6 +90,7 @@ impl Default for Config {
             MAX_MS_WITHOUT_ZERO_INJECTION: 150.0,
 
             MULTIPLY_FIRST_EVENT: 500.0,
+            ACCEL_DECEL_DESCRIMINANT: 10.0,
         }
     }
 }

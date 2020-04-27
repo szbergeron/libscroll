@@ -543,9 +543,10 @@ impl Interpolator {
     }
 
     fn accelerate(&self, velocity: Velocity) -> Velocity {
+        let config = sconfig.read().unwrap();
         //velocity
         if self.source.accelerates() {
-            velocity.abs().powf(1.4).copysign(velocity)
+            (velocity / config.ACCEL_DECEL_DESCRIMINANT).abs().powf(1.4).copysign(velocity) * config.ACCEL_DECEL_DESCRIMINANT
         } else {
             velocity
         }
