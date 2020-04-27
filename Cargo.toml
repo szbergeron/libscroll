@@ -1,6 +1,6 @@
 [package]
 name = "libscroll"
-version = "0.2"
+version = "0.2.0"
 authors = ["Sawyer Bergeron <sawyerbergeron@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -13,4 +13,4 @@ num = "0.2"
 flo_curves = "0.3"
 tini = "0.1"
 lazy_static = "1.4.0"
-app_dirs = "^1.2.1"
+app_dirs = "1.2.1"
