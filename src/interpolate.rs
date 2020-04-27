@@ -490,7 +490,7 @@ impl Interpolator {
     fn fling_boost(&self, velocity: Velocity) -> Velocity {
         let config = sconfig.read().unwrap();
 
-        velocity * 2.0
+        velocity * config.FLING_BOOST_CONSTANT_FACTOR
     }
 
     fn handle_overscroll(&self, start: Time, end: Time, position: Position, velocity: Velocity) -> Velocity {
@@ -546,7 +546,7 @@ impl Interpolator {
         let config = sconfig.read().unwrap();
         //velocity
         if self.source.accelerates() {
-            (velocity / config.ACCEL_DECEL_DESCRIMINANT).abs().powf(1.4).copysign(velocity) * config.ACCEL_DECEL_DESCRIMINANT
+            (velocity / config.ACCEL_DECEL_DESCRIMINANT).abs().powf(config.ACCELERATION_EXPONENT).copysign(velocity) * config.ACCEL_DECEL_DESCRIMINANT
         } else {
             velocity
         }

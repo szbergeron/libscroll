@@ -46,7 +46,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "libscroll"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "app_dirs 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "flo_curves 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
