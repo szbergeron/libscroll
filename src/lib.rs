@@ -57,6 +57,7 @@ pub struct Config {
 	pub MAX_MS_WITHOUT_ZERO_INJECTION: f64,
 	pub MULTIPLY_FIRST_EVENT: f64,
     pub ACCEL_DECEL_DESCRIMINANT: f64,
+    pub ACCELERATION_EXPONENT: f64,
 
 	pub FLIPS_TO_IDLE: u64,
 }
@@ -91,6 +92,7 @@ impl Default for Config {
 
             MULTIPLY_FIRST_EVENT: 500.0,
             ACCEL_DECEL_DESCRIMINANT: 10.0,
+            ACCELERATION_EXPONENT: 1.4,
         }
     }
 }
@@ -472,6 +474,7 @@ impl Scrollview {
             config.get("config", "zero_delta_injection_wait_ms").map(|v: f64| { config_struct.MAX_MS_WITHOUT_ZERO_INJECTION = v});
             config.get("config", "first_event_multiplier").map(|v: f64| { config_struct.MULTIPLY_FIRST_EVENT = v});
             config.get("config", "accel_decel_descriminant").map(|v: f64| { config_struct.ACCEL_DECEL_DESCRIMINANT = v});
+            config.get("config", "acceleration_exponent").map(|v: f64| { config_struct.ACCELERATION_EXPONENT = v});
 
             config.get("config", "flips_until_idle").map(|v: u64| { config_struct.FLIPS_TO_IDLE = v});
         }).map_err(|_| {
