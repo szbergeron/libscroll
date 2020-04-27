@@ -1,4 +1,7 @@
 use std::collections::VecDeque;
+//use std::cell::RwLock;
+use std::borrow::Borrow;
+
 type Timestamp = u64;
 type Time = f64; // arbitrary units, expressed in fractions of how many TIMESTEP_MILLIS elapse
 type TimeDelta = f64;
@@ -7,7 +10,9 @@ type TimeDeltaMicros = u64;
 type Velocity = f64;
 type Position = f64;
 
-const TICKS_PER_TIMUNIT: f64 = 0.5;
+use crate::CONFIG as sconfig;
+
+/*const TICKS_PER_TIMUNIT: f64 = 0.5;
 
 const MILLIS_PER_FRAME_DEFAULT: u64 = 16;
 //const TIMESTEP_MILLIS: f64 = 0.1;
@@ -22,7 +27,7 @@ const TICKS_TO_COAST: f64 = 1.6;
 
 const FLIPS_TO_IDLE: u64 = 20;
 
-const POST_ACCEL_SCALE_VELOCITY: f64 = 10.0;
+const POST_ACCEL_SCALE_VELOCITY: f64 = 19.0;
 const PRE_ACCEL_SCALE_VELOCITY: f64 = 10.0;
 
 const SHIFT_WINDOW_MS: f64 = 0.0;
@@ -43,7 +48,7 @@ const MAX_MS_WITHOUT_ZERO_INJECTION: f64 = 150.0;
 
 const MULTIPLY_FIRST_EVENT: f64 = 500.0;
 
-const FIRST_EVENT_SLOPE: f64 = -0.8;
+const FIRST_EVENT_SLOPE: f64 = -0.8;*/
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Phase {
@@ -142,7 +147,7 @@ pub struct Interpolator {
 
 impl Interpolator {
     pub fn set_source(&mut self, source: crate::Source) {
-        println!("Sets source to {:?}", source);
+        //println!("Sets source to {:?}", source);
         self.source = source;
     }
 
@@ -173,6 +178,8 @@ impl Interpolator {
     }
 
     pub fn sample(&mut self, time: Time) -> Position {
+        let config = sconfig.read().unwrap();
+
         self.prevent_coast(time);
         //let time = time + 33.0;
 
@@ -184,7 +191,7 @@ impl Interpolator {
         }*/
 
         //let time_range = timestamp - last_sample.timestamp;
-        let iter = iter_range(last_sample.time + SHIFT_WINDOW_MS, time + SHIFT_WINDOW_MS, TIMESTEP);
+        let iter = iter_range(last_sample.time + config.SHIFT_WINDOW_MS, time + config.SHIFT_WINDOW_MS, config.TIMESTEP);
 
         //let mut pos_delta = 0.0;
 
@@ -195,7 +202,7 @@ impl Interpolator {
             let stepped_velocity = self.step_velocity(start, end, cur_position, cur_velocity);
             //let approx_velocity = (stepped_velocity + cur_velocity_step) / 2.0;
 
-            let velocity_per_step = (stepped_velocity + cur_velocity) / TIMESTEP; // TODO: for now
+            let velocity_per_step = (stepped_velocity + cur_velocity) / config.TIMESTEP; // TODO: for now
 
             //println!("Velocity approx samples to {}", approx_vel);
 
@@ -247,16 +254,18 @@ impl Interpolator {
     }
 
     pub fn cull(&mut self) {
-        while self.samples.len() > SAMPLE_EXPIRY_COUNT {
+        let config = sconfig.read().unwrap();
+
+        while self.samples.len() > config.SAMPLE_EXPIRY_COUNT {
             self.samples.pop_front();
         }
-        while self.events.len() > EVENT_EXPIRY_COUNT {
+        while self.events.len() > config.EVENT_EXPIRY_COUNT {
             self.events.pop_front();
         }
     }
 
     pub fn signal_fling(&mut self, time: Time) {
-        println!("Fling at {}", time);
+        //println!("Fling at {}", time);
         self.current_phase = Phase::Released(time);
 
         //self.flush(time);
@@ -271,7 +280,7 @@ impl Interpolator {
     }
 
     pub fn signal_pan(&mut self, time: Time, delta: f64) {
-        println!("Signal pan at {} for {}", time, delta);
+        //println!("Signal pan at {} for {}", time, delta);
         if time == 0.0 {
             panic!("can't pass zero timestamps into signal_pan");
         }
@@ -338,16 +347,18 @@ impl Interpolator {
     }
 
     fn check_idle(&mut self, position: Position, velocity: Velocity) {
+        let config = sconfig.read().unwrap();
+
         match self.current_phase {
             Phase::Released(_) => {
-                if position == self.last_value || velocity.abs() < MIN_VELOCITY_TO_IDLE {
+                if position == self.last_value || velocity.abs() < config.MIN_VELOCITY_TO_IDLE {
                     self.flips_same_value += 1;
                 } else {
                     self.flips_same_value = 0;
                 }
                 self.last_value = position;
 
-                if self.flips_same_value > FLIPS_TO_IDLE {
+                if self.flips_same_value > config.FLIPS_TO_IDLE {
                     eprintln!("Goes to idle");
                     println!("check_idle goes to Inactive");
                     self.current_phase = Phase::Inactive;
@@ -367,13 +378,15 @@ impl Interpolator {
     }*/
 
     fn prevent_coast(&mut self, time: Time) {
+        let config = sconfig.read().unwrap();
+
         match self.current_phase {
             Phase::Interpolating => match self.events.len() {
                 0 => {}
                 _ => {
                     let evt = self.events.back().expect("Events was empty despite len > 0");
                     let delta = (time - evt.time).abs();
-                    if delta > self.min_tick_period * TICKS_TO_COAST || delta > MAX_MS_WITHOUT_ZERO_INJECTION {
+                    if delta > self.min_tick_period * config.TICKS_TO_COAST || delta > config.MAX_MS_WITHOUT_ZERO_INJECTION {
                         // inject event
                         //println!("\n\n\n\n\nCLAMPs velocity to prevent coast");
                         println!("Clamps to prevent coast. Delta {} evt {} min_tick_period {}", delta, evt, self.min_tick_period);
@@ -387,6 +400,8 @@ impl Interpolator {
     }
 
     fn interpolate(&self, time: Time) -> Velocity {
+        let config = sconfig.read().unwrap();
+
         let first_before = self
             .events
             .iter()
@@ -430,15 +445,15 @@ impl Interpolator {
 
         let result = match events.len() {
             0 => {
-                println!("Interpolate returns 0 as no events exist");
+                //println!("Interpolate returns 0 as no events exist");
                 0.0
             },
             1 => {
-                println!("Interpolate returns 0, as can't get slope of single event");
+                //println!("Interpolate returns 0, as can't get slope of single event");
                 let evt = events.first().expect("no elements in size 1 vec");
                 //evt.value * MULTIPLY_FIRST_EVENT / (time - evt.time + 1.0)
                 //FIRST_EVENT_SLOPE * (time - evt.time) + evt.value
-                evt.value / MAX_MS_WITHOUT_ZERO_INJECTION
+                evt.value / config.MAX_MS_WITHOUT_ZERO_INJECTION
             }
             //1 => Self::interpolate_constant(&events, time),
             2 => Self::interpolate_linear(&events, time),
@@ -448,83 +463,59 @@ impl Interpolator {
         };
 
         if events.len() == 1 {
-            println!("Sampling imprecisely, only one event available");
+            //println!("Sampling imprecisely, only one event available");
         }
 
         if result == 0.0 {
-            println!("interpolate returned zero. Events vec is {:?} and time is {}. All events is {:?}", events, time, self.events);
+            //println!("interpolate returned zero. Events vec is {:?} and time is {}. All events is {:?}", events, time, self.events);
         }
 
         //println!("Interpolates result {} with evt count {}", result, events.len());
 
         result
-
-        /*match first_before {
-            None => match first_after {
-                None => 0.0, // no events yet, can't know if action started
-                Some(after) => {
-                    match second_after {
-                        None => after.value / TICKS_PER_TIMUNIT,
-                        Some(second_after) => Self::sample_linear(after, second_after, time)
-                    }
-                }
-                //Some(after) => after.value / TICKS_PER_TIMUNIT,
-                    // approximate velocity to be this delta/tick
-            },
-            Some(before) => match first_after {
-                None => before.value / TICKS_PER_TIMUNIT,
-                Some(after) => {
-                    // linear interpolate
-                }
-            }
-        }*/
-
-        /*match self.events.get(0) {
-            None => 0.0, // no events yet, can't know if any action has started
-            Some(latest) => {
-                let r = match self.events.get(1) {
-                    None => latest.value * (MILLIS_PER_FRAME_DEFAULT as f64),
-                    Some(second_latest) => {
-                        // do Hermite interpolation later, for now just do linear (only need 2
-                        // points to do properly)
-                        let r = Self::slope_of(*second_latest, *latest);
-                        println!("Slope_of gives {}", r);
-                        r
-                        //match self.events.get(2)
-                    }
-                };
-
-                println!("Interpolate returns {}", r);
-                r
-            }
-        }*/
     }
 
     fn outside_bounds(&self, position: Position) -> bool {
+        let config = sconfig.read().unwrap();
+
         position > self.track_bound_upper || position < self.track_bound_lower
     }
 
     fn short_circuit_single_event(&self) -> Position /* delta */ {
+        let config = sconfig.read().unwrap();
+
         self.events.back().map(|evt| evt.value).unwrap_or(0.0)
     }
 
     fn fling_boost(&self, velocity: Velocity) -> Velocity {
+        let config = sconfig.read().unwrap();
+
         velocity * 2.0
     }
 
     fn handle_overscroll(&self, start: Time, end: Time, position: Position, velocity: Velocity) -> Velocity {
+        let config = sconfig.read().unwrap();
+
         if self.outside_bounds(position) {
             //velocity.abs().powf(0.6).copysign(velocity)
             if self.source.overscrolls() {
                 let outside_by = if position > self.track_bound_upper {
+                    if velocity < 0.0 {
+                        return velocity;
+                    }
+
                     position - self.track_bound_upper
                 } else {
+                    if velocity > 0.0 {
+                        return velocity;
+                    }
+
                     self.track_bound_lower - position
                 };
 
                 let abs_vel = velocity.abs();
                 let timedelta = end - start;
-                let r_velocity = velocity * (1.0 / (outside_by * OVERSCROLL_ELASTICITY_COEFFICIENT));
+                let r_velocity = velocity * (1.0 / (outside_by * config.OVERSCROLL_ELASTICITY_COEFFICIENT));
 
                 /*if reduction_amount < 0.0 {
                     panic!("Reduction amount negative");
@@ -561,11 +552,15 @@ impl Interpolator {
     }
 
     fn pre_scale(&self, velocity: Velocity) -> Velocity {
-        velocity * PRE_ACCEL_SCALE_VELOCITY
+        let config = sconfig.read().unwrap();
+
+        velocity * config.PRE_ACCEL_SCALE_VELOCITY
     }
 
     fn post_scale(&self, velocity: Velocity) -> Velocity {
-        velocity * POST_ACCEL_SCALE_VELOCITY
+        let config = sconfig.read().unwrap();
+
+        velocity * config.POST_ACCEL_SCALE_VELOCITY
     }
 
     fn decay(&self, start: Time, end: Time, _position: Position, old_velocity: Velocity) -> Velocity {
@@ -635,6 +630,8 @@ impl Interpolator {
     }
 
     fn bounce(&mut self, start: Time, end: Time, position: Position, old_velocity: Velocity) -> Velocity {
+        let config = sconfig.read().unwrap();
+
         if self.outside_bounds(position) {
             let trackposition = if position > self.track_bound_upper {
                 TrackPosition::Bottom
@@ -657,41 +654,19 @@ impl Interpolator {
                     TrackPosition::Bottom => position - self.track_bound_upper,
                 };
 
-                let force = -displacement * OVERSCROLL_SPRING_CONSTANT;
+                let force = -displacement * config.OVERSCROLL_SPRING_CONSTANT;
                 let timedelta = end - start;
-                let acceleration = force / CONTENT_MASS_VALUE;
+                let acceleration = force / config.CONTENT_MASS_VALUE;
                 let velocity = old_velocity + acceleration * timedelta;
 
-                let velocity = velocity * BOUNCE_DAMP_FACTOR;
+                let velocity = velocity * config.BOUNCE_DAMP_FACTOR;
 
-                /*let abs_vel = old_velocity.abs(); // just for push
-                let timedelta = end - start;
-                let reduction_amount = match abs_vel {
-                    zero if zero == 0.0 => 0.0,
-                    other => (other.powf(BOUNCE_REDUCTION_EXPONENT) / other) * BOUNCE_REDUCTION_COEFFICIENT * timedelta,
-                };
-
-                if reduction_amount < 0.0 {
-                    panic!("Reduction amount negative");
-                } /*else if reduction_amount > abs_vel {
-                    panic!("*/
-
-                println!("Reduces {} by {}", abs_vel, reduction_amount);*/
-                if acceleration < 0.0 {
-                    //println!("accel negative");
-                } else {
-                    //println!("accel positive");
-                }
-
-                //if old_velocity.copysign(acceleration) == 
-                //println!("Velocity was {}, given {} {}. Found {} {} {} {}", velocity, old_velocity, position, displacement, force, timedelta, acceleration);
                 if velocity.is_nan() {
                     panic!("Velocity was NaN");
                 } else if velocity.is_infinite() {
                     panic!();
                 }
 
-                //(abs_vel - reduction_amount).copysign(old_velocity)
                 velocity
             }
         }
@@ -784,7 +759,7 @@ impl Interpolator {
     fn interpolate_constant(events: &Vec<&Event>, at: Time) -> f64 {
         let vel = events.first().expect("interpolate_constant given empty events vec").value;
 
-        println!("Interpolating constant, gives {}", vel);
+        //println!("Interpolating constant, gives {}", vel);
 
         vel
     }
@@ -798,9 +773,9 @@ impl Interpolator {
             panic!("interpolate_linear given single event");
         }
 
-        if first.value == second.value && first.value != 0.0 {
+        /*if first.value == second.value && first.value != 0.0 {
             println!("Equal values in events");
-        }
+        }*/
 
         Self::sample_linear(first, second, at)
     }

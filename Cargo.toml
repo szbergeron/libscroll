@@ -11,3 +11,6 @@ description = "Scrollview event handling library"
 [dependencies]
 num = "0.2"
 flo_curves = "0.3"
+tini = "0.1"
+lazy_static = "1.4.0"
+app_dirs = "^1.2.1"

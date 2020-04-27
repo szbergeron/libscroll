@@ -14,6 +14,11 @@
 extern crate num;
 use std::f64;
 
+use app_dirs::*;
+
+#[macro_use]
+extern crate lazy_static;
+
 mod circular_backqueue;
 
 mod interpolate;
@@ -27,6 +32,72 @@ type Timestamp = u64;
 
 use std::fs::File;
 use std::io::prelude::*;
+
+use std::sync::RwLock;
+use tini::Ini;
+
+const APP_INFO: AppInfo = AppInfo { name: "libscroll", author: "Sawyer Bergeron" };
+
+#[allow(non_snake_case)]
+pub struct Config {
+
+	pub EVENT_EXPIRY_COUNT: usize,
+	pub SAMPLE_EXPIRY_COUNT: usize,
+
+	pub TICKS_TO_COAST: f64,
+	pub TIMESTEP: f64,
+	pub MIN_VELOCITY_TO_IDLE: f64,
+	pub POST_ACCEL_SCALE_VELOCITY: f64,
+	pub PRE_ACCEL_SCALE_VELOCITY: f64,
+	pub SHIFT_WINDOW_MS: f64,
+	pub OVERSCROLL_ELASTICITY_COEFFICIENT: f64,
+	pub CONTENT_MASS_VALUE: f64,
+	pub OVERSCROLL_SPRING_CONSTANT: f64,
+	pub BOUNCE_DAMP_FACTOR: f64,
+	pub MAX_MS_WITHOUT_ZERO_INJECTION: f64,
+	pub MULTIPLY_FIRST_EVENT: f64,
+
+	pub FLIPS_TO_IDLE: u64,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            TIMESTEP: 0.1,
+
+            MIN_VELOCITY_TO_IDLE: 0.002,
+
+            EVENT_EXPIRY_COUNT: 20,
+            SAMPLE_EXPIRY_COUNT: 20,
+
+            TICKS_TO_COAST: 1.6,
+
+            FLIPS_TO_IDLE: 20,
+
+            POST_ACCEL_SCALE_VELOCITY: 19.0,
+            PRE_ACCEL_SCALE_VELOCITY: 10.0,
+
+            SHIFT_WINDOW_MS: 0.0,
+
+            OVERSCROLL_ELASTICITY_COEFFICIENT: 1.0,
+
+            CONTENT_MASS_VALUE: 6000.0,
+            OVERSCROLL_SPRING_CONSTANT: 0.4,
+
+            BOUNCE_DAMP_FACTOR: 0.9974,
+
+            MAX_MS_WITHOUT_ZERO_INJECTION: 150.0,
+
+            MULTIPLY_FIRST_EVENT: 500.0,
+        }
+    }
+}
+
+//thread_local!(static CONFIG: RefCell<Config> = RefCell::new(Config::default()));
+lazy_static! {
+    static ref CONFIG: RwLock<Config> = RwLock::new(Config::default());
+}
+
 
 //#[macro_use]
 //extern crate smart_default;
@@ -259,6 +330,9 @@ impl Scrollview {
     /// particularly useful, so set_geometry(), set_avg_frametime(), and any
     /// other relevant initialization functions still need to be used
     pub fn new() -> Scrollview {
+        eprintln!("Updating config...");
+        Self::update_config();
+
         Scrollview {
             input_per_frame_log: circular_backqueue::ForgetfulLogQueue::new(SAMPLE_OVER_X_FRAMES),
             content_height: 0.0,
@@ -329,11 +403,10 @@ impl Scrollview {
 
     /// Enqueue a pan event for the referenced scrollview
     pub fn push_pan(&mut self, axis: Axis, amount: f64, timestamp: Option<u64>) {
-        println!("push_pan with {:?}, {}, {}", axis, amount, timestamp.unwrap());
+        //println!("push_pan with {:?}, {}, {}", axis, amount, timestamp.unwrap());
         if !DEBUG {
             match axis {
-                Axis::Horizontal => {},
-                //Axis::Horizontal => self.x.signal_pan(timestamp.unwrap() as f64, amount),
+                Axis::Horizontal => self.x.signal_pan(timestamp.unwrap() as f64, amount),
                 Axis::Vertical => self.y.signal_pan(timestamp.unwrap() as f64, amount),
             }
         } else {
@@ -346,9 +419,11 @@ impl Scrollview {
 
     /// Enqueue a fling (finger lift at any velocity) for the referenced scrollview
     pub fn push_fling(&mut self, timestamp: Option<u64>) {
+        eprintln!("Updating config...");
+        Self::update_config();
         println!("push_fling with {}", timestamp.unwrap());
         //self.current_velocity.decay_start();
-        //self.x.signal_fling(timestamp.unwrap() as f64);
+        self.x.signal_fling(timestamp.unwrap() as f64);
         self.y.signal_fling(timestamp.unwrap() as f64);
     }
 
@@ -358,7 +433,7 @@ impl Scrollview {
         //self.pan_log_x.clear();
         //self.pan_log_y.clear();
         //self.current_velocity = AxisVector { x: 0.0, y: 0.0, ..self.current_velocity };
-        //self.x.signal_interrupt(timestamp.unwrap());
+        self.x.signal_interrupt(timestamp.unwrap() as f64);
         self.y.signal_interrupt(timestamp.unwrap() as f64);
     }
 
@@ -368,5 +443,37 @@ impl Scrollview {
         self.current_source = source;
         self.x.set_source(source);
         self.y.set_source(source);
+    }
+
+    fn update_config() {
+        let mut config_struct = CONFIG.write().expect("Couldn't lock config struct");
+
+        let mut config_dir: std::path::PathBuf = app_root(AppDataType::UserConfig, &APP_INFO).unwrap(); // TODO: gracefully handle
+        let config_file = std::path::PathBuf::from("config.ini");
+        config_dir.push(config_file);
+
+        let _ = Ini::from_file(&config_dir).map(|config| {
+            println!("Found config file, applying...");
+            config.get("config", "event_expiry_count").map(|v: usize| { config_struct.EVENT_EXPIRY_COUNT = v});
+            config.get("config", "sample_expiry_count").map(|v: usize| { config_struct.SAMPLE_EXPIRY_COUNT = v});
+
+            config.get("config", "ticks_to_coast").map(|v: f64| { config_struct.TICKS_TO_COAST = v});
+            config.get("config", "timestep").map(|v: f64| { config_struct.TIMESTEP = v});
+            config.get("config", "min_velocity_to_idle").map(|v: f64| { config_struct.MIN_VELOCITY_TO_IDLE = v});
+            config.get("config", "post_acceleration_scale_velocity").map(|v: f64| { config_struct.POST_ACCEL_SCALE_VELOCITY = v});
+            config.get("config", "pre_acceleration_scale_velocity").map(|v: f64| { config_struct.PRE_ACCEL_SCALE_VELOCITY = v});
+            config.get("config", "shift_window_ms").map(|v: f64| { config_struct.SHIFT_WINDOW_MS = v});
+            config.get("config", "overscroll_elasticity_coefficient").map(|v: f64| { config_struct.OVERSCROLL_ELASTICITY_COEFFICIENT = v});
+            config.get("config", "content_mass_value").map(|v: f64| { config_struct.CONTENT_MASS_VALUE = v});
+            config.get("config", "overscroll_spring_constant").map(|v: f64| { config_struct.OVERSCROLL_SPRING_CONSTANT = v});
+            config.get("config", "bounce_damping_factor").map(|v: f64| { config_struct.BOUNCE_DAMP_FACTOR = v});
+            config.get("config", "zero_delta_injection_wait_ms").map(|v: f64| { config_struct.MAX_MS_WITHOUT_ZERO_INJECTION = v});
+            config.get("config", "first_event_multiplier").map(|v: f64| { config_struct.MULTIPLY_FIRST_EVENT = v});
+
+            config.get("config", "flips_until_idle").map(|v: u64| { config_struct.FLIPS_TO_IDLE = v});
+        }).map_err(|_| {
+            println!("Couldn't find config file");
+            // maybe add message if can't be found?
+        });
     }
 }
